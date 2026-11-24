@@ -51,7 +51,7 @@ public record KingdomViewPayload(BlockPos townHall, String name, DyeColor color,
 
     /**
      * @param villagers    villagers living in the kingdom
-     * @param villagerCap  how many the level allows
+     * @param homes        how many villagers the kingdom's houses have beds for
      * @param landCap      how many chunks the level allows
      * @param xp           kingdom XP earned toward the next level
      * @param xpToNext     XP the next level takes, or 0 at the top level
@@ -60,7 +60,7 @@ public record KingdomViewPayload(BlockPos townHall, String name, DyeColor color,
      * @param taxes        emeralds waiting in the Town Hall's treasury
      * @param taxCap       how many the treasury holds (0 without the Tax Collector perk)
      */
-    public record Growth(int level, int maxLevel, int villagers, int villagerCap, int landCap, int xp, int xpToNext,
+    public record Growth(int level, int maxLevel, int villagers, int homes, int landCap, int xp, int xpToNext,
                          int perkPoints, Map<ResourceLocation, Integer> perks, int taxes, int taxCap) {
         private static final StreamCodec<io.netty.buffer.ByteBuf, Map<ResourceLocation, Integer>> PERKS_CODEC =
                 ByteBufCodecs.map(HashMap::new, ResourceLocation.STREAM_CODEC, ByteBufCodecs.VAR_INT);
@@ -76,7 +76,7 @@ public record KingdomViewPayload(BlockPos townHall, String name, DyeColor color,
                     buf.writeVarInt(growth.level);
                     buf.writeVarInt(growth.maxLevel);
                     buf.writeVarInt(growth.villagers);
-                    buf.writeVarInt(growth.villagerCap);
+                    buf.writeVarInt(growth.homes);
                     buf.writeVarInt(growth.landCap);
                     buf.writeVarInt(growth.xp);
                     buf.writeVarInt(growth.xpToNext);

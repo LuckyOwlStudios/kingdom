@@ -10,6 +10,9 @@ import com.luckyowlstudios.kingdoms.kingdom.KingdomVillagers;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomTavern;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomMaps;
 import com.luckyowlstudios.kingdoms.kingdom.Homecoming;
+import com.luckyowlstudios.kingdoms.kingdom.House;
+import com.luckyowlstudios.kingdoms.kingdom.HouseScan;
+import com.luckyowlstudios.kingdoms.kingdom.KingdomHouses;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomPerkEffects;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomPerk;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomPerks;
@@ -52,12 +55,22 @@ public class KingdomsGameTests implements FabricGameTest {
      * at the same time), so kingdoms founded by different tests never land on each other's claimed chunk.
      */
     private static BlockPos isolatedHall(GameTestHelper helper) {
+        BlockPos pos = isolatedSpot(helper);
+        helper.getLevel().setBlockAndUpdate(pos, ModBlocks.TOWN_HALL.get().defaultBlockState());
+        return pos;
+    }
+
+    /** A spot in a chunk of its own, well away from every other test, like {@link #isolatedHall} but with nothing placed. */
+    private static BlockPos isolatedSpot(GameTestHelper helper) {
         BlockPos origin = helper.absolutePos(BlockPos.ZERO);
         // Far enough apart that a kingdom at the top level never reaches another test's land.
         int chunkX = 4096 + NEXT_HALL.getAndIncrement() * (2 * (KingdomLevel.of(KingdomLevel.MAX_LEVEL).claimRadius() + KingdomPerks.EXPANSION.maxTier()) + 3);
-        BlockPos pos = new BlockPos(chunkX * 16 + 4, origin.getY() + 2, 4096 * 16 + 4);
-        helper.getLevel().setBlockAndUpdate(pos, ModBlocks.TOWN_HALL.get().defaultBlockState());
-        return pos;
+        return new BlockPos(chunkX * 16 + 4, origin.getY() + 2, 4096 * 16 + 4);
+    }
+
+    /** Where tests build a house next to a hall from {@link #isolatedHall}: in the hall's chunk, clear of its work blocks. */
+    private static BlockPos houseCorner(BlockPos hall) {
+        return hall.offset(5, 0, 5);
     }
 
     /** Researches the next tier of a perk and finishes the research straight away, as if the Scholars were done. */
@@ -104,7 +117,8 @@ public class KingdomsGameTests implements FabricGameTest {
         BlockPos deskB = hall.offset(-3, 0, 0);
         level.setBlockAndUpdate(deskA, ModBlocks.SCHOLARS_DESK.get().defaultBlockState());
         level.setBlockAndUpdate(deskB, ModBlocks.SCHOLARS_DESK.get().defaultBlockState());
-        // Villagers only move in while the Town Hall is loaded, so keep it loaded like a nearby player would.
+        // Villagers only move into a house with free beds, while it's loaded: keep it loaded like a nearby player would.
+        BlockPos marker = TestHouses.build(level, houseCorner(hall), 2, true);
         ChunkClaim center = ChunkClaim.of(GlobalPos.of(level.dimension(), hall));
         for (int dx = -1; dx <= 1; dx++) {
             for (int dz = -1; dz <= 1; dz++) {
@@ -118,6 +132,8 @@ public class KingdomsGameTests implements FabricGameTest {
                             "forced chunks aren't loaded yet");
                 }
             }
+            // Wait for the light to spread through the house too.
+            TestHouses.assertReady(level, marker);
         }).thenExecute(() -> {
             java.util.List<Villager> villagers = new java.util.ArrayList<>();
             try {
@@ -414,8 +430,8 @@ public class KingdomsGameTests implements FabricGameTest {
         helper.succeed();
     }
 
-    @GameTest(template = EMPTY_STRUCTURE, timeoutTicks = 400)
-    public void levellingUpGrowsVillagersAndLand(GameTestHelper helper) {
+    @GameTest(template = EMPTY_STRUCTURE)
+    public void levellingUpGrowsTheLand(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         BlockPos hall = isolatedHall(helper);
         ServerPlayer leader = helper.makeMockServerPlayerInLevel();
@@ -446,59 +462,15 @@ public class KingdomsGameTests implements FabricGameTest {
                 "the ring around the town hall wasn't claimed");
         var view = KingdomScreens.view(leader, kingdom);
         helper.assertTrue(view.growth().level() == 2 && view.growth().landCap() == KingdomLevel.of(2).landCap()
-                && view.growth().villagerCap() == KingdomLevel.of(2).villagerCap()
+                && view.growth().homes() == 0
                 && view.growth().xp() == 5 && view.growth().xpToNext() == KingdomLevel.of(3).xp(), "screen got the wrong growth: " + view.growth());
 
-        // Villagers only move in while the Town Hall is loaded; nobody is near this one.
-        helper.assertTrue(KingdomVillagers.morning(level.getServer(), kingdom).isEmpty(), "a villager moved into an unloaded kingdom");
-        // Keep the hall and the chunks around it loaded, the way a nearby player would.
-        for (int dx = -1; dx <= 1; dx++) {
-            for (int dz = -1; dz <= 1; dz++) {
-                level.setChunkForced(center.x() + dx, center.z() + dz, true);
-            }
-        }
-        // Forcing a chunk takes a few ticks to reach entity ticking.
-        helper.startSequence().thenWaitUntil(() -> {
-            for (int dx = -1; dx <= 1; dx++) {
-                for (int dz = -1; dz <= 1; dz++) {
-                    helper.assertTrue(level.isPositionEntityTicking(new net.minecraft.world.level.ChunkPos(center.x() + dx, center.z() + dz).getMiddleBlockPosition(hall.getY())),
-                            "forced chunks aren't loaded yet");
-                }
-            }
-        }).thenExecute(() -> {
-            // Villagers move in one per morning up to the cap.
-            int cap = kingdom.levelInfo().villagerCap();
-            for (int i = 0; i < cap; i++) {
-                Villager villager = KingdomVillagers.morning(level.getServer(), kingdom).orElseThrow(
-                        () -> new net.minecraft.gametest.framework.GameTestAssertException("no villager moved in"));
-                helper.assertTrue(villager.getTags().contains(KingdomVillagers.RESIDENT_TAG), "new villager isn't tied to the kingdom");
-                helper.assertTrue(villager.distanceToSqr(hall.getCenter()) < 16 * 16, "villager arrived too far from the town hall");
-            }
-            helper.assertTrue(kingdom.residents().size() == cap, "should have " + cap + " villagers, got " + kingdom.residents().size());
-            helper.assertTrue(KingdomVillagers.morning(level.getServer(), kingdom).isEmpty(), "a villager moved in past the cap");
-
-            // One dies: there's room again.
-            java.util.UUID first = kingdom.residents().iterator().next();
-            net.minecraft.world.entity.Entity resident = level.getEntity(first);
-            helper.assertTrue(resident != null, "resident villager isn't in the world");
-            resident.remove(net.minecraft.world.entity.Entity.RemovalReason.KILLED);
-            helper.assertTrue(kingdom.residents().size() == cap - 1 && !kingdom.residents().contains(first), "dead villager still counts");
-            helper.assertTrue(KingdomVillagers.morning(level.getServer(), kingdom).isPresent(), "no villager moved in after one died");
-
-            // Lowering the level (operator command) shrinks the land back.
-            Kingdoms.setLevel(level.getServer(), kingdom, 1);
-            helper.assertTrue(kingdom.claims().equals(java.util.Set.of(center)), "land didn't shrink back to the hall's chunk");
-            helper.assertTrue(KingdomData.get(level.getServer()).claimedBy(corner).isEmpty(), "released chunk is still claimed");
-
-            java.util.List.copyOf(kingdom.residents()).forEach(id -> java.util.Optional.ofNullable(level.getEntity(id))
-                    .ifPresent(net.minecraft.world.entity.Entity::discard));
-            Kingdoms.leave(leader);
-            for (int dx = -1; dx <= 1; dx++) {
-                for (int dz = -1; dz <= 1; dz++) {
-                    level.setChunkForced(center.x() + dx, center.z() + dz, false);
-                }
-            }
-        }).thenSucceed();
+        // Lowering the level (operator command) shrinks the land back.
+        Kingdoms.setLevel(level.getServer(), kingdom, 1);
+        helper.assertTrue(kingdom.claims().equals(java.util.Set.of(center)), "land didn't shrink back to the hall's chunk");
+        helper.assertTrue(KingdomData.get(level.getServer()).claimedBy(corner).isEmpty(), "released chunk is still claimed");
+        Kingdoms.leave(leader);
+        helper.succeed();
     }
 
     @GameTest(template = EMPTY_STRUCTURE)
@@ -598,7 +570,8 @@ public class KingdomsGameTests implements FabricGameTest {
         leader.setGameMode(net.minecraft.world.level.GameType.SURVIVAL);
         Kingdom kingdom = Kingdoms.tryCreate(leader, new CreateKingdomPayload(hall, "Taxbury " + level.getGameTime(), DyeColor.ORANGE)).orElseThrow();
         Kingdoms.setLevel(level.getServer(), kingdom, 3);
-        // Villagers only move in while the Town Hall is loaded, so keep it loaded like a nearby player would.
+        // Villagers only move into a house with free beds, while it's loaded: keep it loaded like a nearby player would.
+        BlockPos marker = TestHouses.build(level, houseCorner(hall), 2, true);
         ChunkClaim center = ChunkClaim.of(GlobalPos.of(level.dimension(), hall));
         for (int dx = -1; dx <= 1; dx++) {
             for (int dz = -1; dz <= 1; dz++) {
@@ -612,6 +585,8 @@ public class KingdomsGameTests implements FabricGameTest {
                             "forced chunks aren't loaded yet");
                 }
             }
+            // Wait for the light to spread through the house too.
+            TestHouses.assertReady(level, marker);
         }).thenExecute(() -> {
             Villager jobless = KingdomVillagers.morning(level.getServer(), kingdom).orElseThrow(
                     () -> new net.minecraft.gametest.framework.GameTestAssertException("no villager moved in"));
@@ -848,6 +823,8 @@ public class KingdomsGameTests implements FabricGameTest {
         leader.moveTo(hall.getX() + 1.5, hall.getY(), hall.getZ() + 0.5);
         Kingdom kingdom = Kingdoms.tryCreate(leader, new CreateKingdomPayload(hall, "Innsbury " + level.getGameTime(), DyeColor.ORANGE)).orElseThrow();
         Kingdoms.setLevel(level.getServer(), kingdom, 2);
+        // Room for two: the Innkeeper and one traveller.
+        BlockPos marker = TestHouses.build(level, houseCorner(hall), 2, true);
         ChunkClaim center = ChunkClaim.of(GlobalPos.of(level.dimension(), hall));
         for (int dx = -1; dx <= 1; dx++) {
             for (int dz = -1; dz <= 1; dz++) {
@@ -862,6 +839,8 @@ public class KingdomsGameTests implements FabricGameTest {
                             "forced chunks aren't loaded yet");
                 }
             }
+            // Wait for the light to spread through the house too.
+            TestHouses.assertReady(level, marker);
         }).thenExecute(() -> {
             level.setBlockAndUpdate(tavern, ModBlocks.TAVERN.get().defaultBlockState());
             // A Tavern with no Innkeeper doesn't bring anyone.
@@ -879,12 +858,8 @@ public class KingdomsGameTests implements FabricGameTest {
             helper.assertTrue(traveller.getTags().contains(KingdomVillagers.RESIDENT_TAG) && kingdom.residents().contains(traveller.getUUID()),
                     "the night traveller isn't a resident");
 
-            // Still capped by the kingdom's level.
-            int cap = kingdom.levelInfo().villagerCap();
-            while (kingdom.residents().size() < cap) {
-                helper.assertTrue(KingdomVillagers.morning(level.getServer(), kingdom).isPresent(), "couldn't fill the kingdom");
-            }
-            helper.assertTrue(KingdomTavern.nightfall(level.getServer(), kingdom).isEmpty(), "a villager moved in at night past the cap");
+            // Still only into a free home: both beds are taken now.
+            helper.assertTrue(KingdomTavern.nightfall(level.getServer(), kingdom).isEmpty(), "a villager moved in at night with no free home");
 
             // An Innkeeper whose Tavern is gone doesn't count.
             level.removeBlock(tavern, false);
@@ -899,5 +874,136 @@ public class KingdomsGameTests implements FabricGameTest {
                 }
             }
         }).thenSucceed();
+    }
+
+    @GameTest(template = EMPTY_STRUCTURE, timeoutTicks = 400)
+    public void villagersMoveIntoVacantHouses(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        var server = level.getServer();
+        BlockPos hall = isolatedHall(helper);
+        ServerPlayer leader = helper.makeMockServerPlayerInLevel();
+        leader.moveTo(hall.getX() + 1.5, hall.getY(), hall.getZ() + 0.5);
+        Kingdom kingdom = Kingdoms.tryCreate(leader, new CreateKingdomPayload(hall, "Housington " + level.getGameTime(), DyeColor.BROWN)).orElseThrow();
+        helper.assertTrue(KingdomVillagers.morning(server, kingdom).isEmpty(), "a villager moved into a kingdom with no houses");
+
+        // A house with a bed and a door, but no light: monsters could spawn inside, so it isn't a home yet.
+        BlockPos corner = houseCorner(hall);
+        BlockPos marker = TestHouses.build(level, corner, 1, false);
+        House house = TestHouses.house(level, marker);
+        HouseScan.Result scan = KingdomHouses.rescan(level, house);
+        helper.assertTrue(scan.enclosed(), "the house isn't closed in: " + scan.opening() + " at " + scan.leak());
+        helper.assertTrue(scan.beds().equals(java.util.List.of(corner.offset(2, 1, 1))), "the bed wasn't found: " + scan.beds());
+        helper.assertTrue(scan.exteriorDoors() == 1, "the front door wasn't found, got " + scan.exteriorDoors());
+        helper.assertFalse(scan.darkSpots().isEmpty(), "an unlit house has no dark spots");
+        helper.assertFalse(house.valid() || KingdomHouses.homes(server, kingdom) != 0, "a dark house counts as a home");
+
+        // Light it, and keep it loaded like a nearby player would.
+        level.setBlockAndUpdate(corner.offset(2, 4, 2), net.minecraft.world.level.block.Blocks.GLOWSTONE.defaultBlockState());
+        ChunkClaim center = ChunkClaim.of(GlobalPos.of(level.dimension(), hall));
+        level.setChunkForced(center.x(), center.z(), true);
+        helper.startSequence().thenWaitUntil(() -> {
+            helper.assertTrue(level.isPositionEntityTicking(marker), "the house's chunk isn't loaded yet");
+            TestHouses.assertReady(level, marker);
+        }).thenExecute(() -> {
+            try {
+                helper.assertTrue(KingdomHouses.homes(server, kingdom) == 1, "a one-bed house should be one home, got " + KingdomHouses.homes(server, kingdom));
+
+                // A second marker in the same house doesn't make it two houses.
+                BlockPos extra = corner.offset(3, 1, 1);
+                level.setBlockAndUpdate(extra, ModBlocks.HOUSE_MARKER.get().defaultBlockState());
+                House second = TestHouses.house(level, extra);
+                KingdomHouses.rescan(level, second);
+                helper.assertFalse(second.valid(), "a second marker in a house counted");
+                helper.assertTrue(KingdomHouses.homes(server, kingdom) == 1, "two markers made two homes");
+                level.removeBlock(extra, false);
+                helper.assertTrue(KingdomHouses.at(server, GlobalPos.of(level.dimension(), extra)).isEmpty(), "a removed marker is still a house");
+
+                // Someone moves in, inside the house, and makes its bed their own.
+                Villager first = KingdomVillagers.morning(server, kingdom).orElseThrow(
+                        () -> new net.minecraft.gametest.framework.GameTestAssertException("no villager moved into the house"));
+                BlockPos at = first.blockPosition();
+                helper.assertTrue(at.getX() > corner.getX() && at.getX() < corner.getX() + 4 && at.getZ() > corner.getZ()
+                        && at.getZ() < corner.getZ() + 4, "the villager turned up outside the house, at " + at);
+                helper.assertTrue(house.occupants().equals(java.util.List.of(first.getUUID())), "the villager wasn't given the house");
+                helper.assertTrue(first.getBrain().getMemory(net.minecraft.world.entity.ai.memory.MemoryModuleType.HOME)
+                        .filter(GlobalPos.of(level.dimension(), corner.offset(2, 1, 1))::equals).isPresent(), "the villager wasn't given the bed");
+                helper.assertTrue(KingdomVillagers.morning(server, kingdom).isEmpty(), "a villager moved into a full house");
+
+                // A hole in the roof: open to the sky. The villager keeps the house, but it's no home until it's fixed.
+                BlockPos roof = corner.offset(1, 4, 2);
+                level.setBlockAndUpdate(roof, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+                HouseScan.Result open = KingdomHouses.rescan(level, house);
+                helper.assertTrue(open.opening() == HouseScan.Opening.SKY && !house.valid(), "a hole in the roof wasn't noticed: " + open.opening());
+                helper.assertTrue(house.occupants().contains(first.getUUID()), "the villager lost the house to a hole in the roof");
+                level.setBlockAndUpdate(roof, net.minecraft.world.level.block.Blocks.STONE_BRICKS.defaultBlockState());
+
+                // Walling up the door: closed in, but no way in or out.
+                BlockPos door = corner.offset(4, 1, 2);
+                level.setBlockAndUpdate(door, net.minecraft.world.level.block.Blocks.STONE_BRICKS.defaultBlockState());
+                level.setBlockAndUpdate(door.above(), net.minecraft.world.level.block.Blocks.STONE_BRICKS.defaultBlockState());
+                HouseScan.Result walled = KingdomHouses.rescan(level, house);
+                helper.assertTrue(walled.enclosed() && walled.exteriorDoors() == 0 && !house.valid(), "a house without a door counts");
+                TestHouses.door(level, door, net.minecraft.core.Direction.EAST);
+                TestHouses.assertReady(level, marker);
+
+                // The villager dies: its bed is free for someone new.
+                first.remove(net.minecraft.world.entity.Entity.RemovalReason.KILLED);
+                helper.assertTrue(house.occupants().isEmpty(), "a dead villager still lives in the house");
+                Villager next = KingdomVillagers.morning(server, kingdom).orElseThrow(
+                        () -> new net.minecraft.gametest.framework.GameTestAssertException("nobody moved in after the villager died"));
+
+                // The marker is taken down: the villager is homeless and nobody new comes.
+                level.removeBlock(marker, false);
+                helper.assertTrue(KingdomHouses.homes(server, kingdom) == 0, "a house without its marker still counts");
+                helper.assertTrue(KingdomVillagers.morning(server, kingdom).isEmpty(), "a villager moved in with no houses");
+                // Put back, the homeless villager gets it first.
+                level.setBlockAndUpdate(marker, ModBlocks.HOUSE_MARKER.get().defaultBlockState());
+                House rebuilt = TestHouses.house(level, marker);
+                helper.assertTrue(KingdomVillagers.morning(server, kingdom).isEmpty(), "a newcomer took the homeless villager's house");
+                helper.assertTrue(rebuilt.valid() && rebuilt.occupants().equals(java.util.List.of(next.getUUID())),
+                        "the homeless villager didn't get the house back: " + rebuilt.occupants());
+
+                // Houses are saved.
+                var ops = level.registryAccess().createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE);
+                House loaded = House.CODEC.parse(ops, House.CODEC.encodeStart(ops, rebuilt).getOrThrow()).getOrThrow();
+                helper.assertTrue(loaded.pos().equals(rebuilt.pos()) && loaded.valid() && loaded.beds().equals(rebuilt.beds())
+                        && loaded.occupants().equals(rebuilt.occupants()), "the house wasn't saved properly");
+                next.discard();
+            } finally {
+                java.util.List.copyOf(kingdom.residents()).forEach(id -> java.util.Optional.ofNullable(level.getEntity(id))
+                        .ifPresent(net.minecraft.world.entity.Entity::discard));
+                Kingdoms.leave(leader);
+                level.setChunkForced(center.x(), center.z(), false);
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(template = EMPTY_STRUCTURE, timeoutTicks = 200)
+    public void housesTakeInRoomsBehindInsideDoors(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos corner = isolatedSpot(helper);
+        // Two rooms side by side, 3 by 3 by 3 inside each: a front room with the way out and the marker, a back room
+        // through an inside door with the bed. Each has a light.
+        TestHouses.box(level, corner, 9, 5, 5);
+        for (int y = 1; y <= 3; y++) {
+            for (int z = 1; z <= 3; z++) {
+                level.setBlockAndUpdate(corner.offset(4, y, z), net.minecraft.world.level.block.Blocks.STONE_BRICKS.defaultBlockState());
+            }
+        }
+        TestHouses.door(level, corner.offset(0, 1, 2), net.minecraft.core.Direction.WEST);
+        TestHouses.door(level, corner.offset(4, 1, 2), net.minecraft.core.Direction.EAST);
+        TestHouses.bed(level, corner.offset(6, 1, 1), net.minecraft.core.Direction.EAST);
+        level.setBlockAndUpdate(corner.offset(2, 4, 2), net.minecraft.world.level.block.Blocks.GLOWSTONE.defaultBlockState());
+        level.setBlockAndUpdate(corner.offset(6, 4, 2), net.minecraft.world.level.block.Blocks.GLOWSTONE.defaultBlockState());
+        BlockPos marker = corner.offset(2, 1, 3);
+        level.setBlockAndUpdate(marker, ModBlocks.HOUSE_MARKER.get().defaultBlockState());
+
+        HouseScan.Result scan = HouseScan.scan(level, marker);
+        helper.assertTrue(scan.enclosed(), "the house isn't closed in: " + scan.opening() + " at " + scan.leak());
+        helper.assertTrue(scan.space() > 27, "the back room wasn't taken in, only " + scan.space() + " blocks of air");
+        helper.assertTrue(scan.beds().equals(java.util.List.of(corner.offset(7, 1, 1))), "the bed in the back room wasn't found: " + scan.beds());
+        helper.assertTrue(scan.exteriorDoors() == 1, "the inside door counted as a way out, or the front door didn't: " + scan.exteriorDoors());
+        // Once the light has spread, it's a home.
+        helper.succeedWhen(() -> helper.assertTrue(HouseScan.scan(level, marker).valid(), "the two-room house isn't a home"));
     }
 }

@@ -49,7 +49,7 @@ public final class KingdomScreens {
     private static KingdomViewPayload.Growth growth(net.minecraft.server.MinecraftServer server, Kingdom kingdom) {
         KingdomLevel level = kingdom.levelInfo();
         return new KingdomViewPayload.Growth(level.level(), KingdomLevel.MAX_LEVEL, kingdom.residents().size(),
-                level.villagerCap(), kingdom.landCap(), kingdom.xp(), level.xpToNext(), KingdomPerks.availablePoints(kingdom), Map.copyOf(kingdom.perks()),
+                KingdomHouses.homes(server, kingdom), kingdom.landCap(), kingdom.xp(), level.xpToNext(), KingdomPerks.availablePoints(kingdom), Map.copyOf(kingdom.perks()),
                 kingdom.taxes(), TaxCollector.treasuryCap(server, kingdom));
     }
 

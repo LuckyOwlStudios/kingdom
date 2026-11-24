@@ -146,9 +146,8 @@ public final class KingdomCommand {
         source.sendSuccess(() -> Component.translatable("kingdoms.kingdom.info.title", k.displayName()), false);
         source.sendSuccess(() -> Component.translatable("kingdoms.kingdom.info.leader", leader), false);
         source.sendSuccess(() -> Component.translatable("kingdoms.kingdom.info.members", k.members().size(), members), false);
-        KingdomLevel levelInfo = k.levelInfo();
         source.sendSuccess(() -> Component.translatable("kingdoms.kingdom.info.level", k.level(),
-                k.residents().size(), levelInfo.villagerCap(), k.claims().size(), k.landCap()), false);
+                k.residents().size(), KingdomHouses.homes(server, k), k.claims().size(), k.landCap()), false);
         k.townHall().ifPresentOrElse(
                 hall -> source.sendSuccess(() -> Component.translatable("kingdoms.kingdom.info.town_hall",
                         hall.pos().getX(), hall.pos().getY(), hall.pos().getZ()), false),

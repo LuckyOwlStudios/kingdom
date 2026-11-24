@@ -6,22 +6,23 @@ import net.minecraft.core.GlobalPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.npc.Villager;
-import net.minecraft.world.level.levelgen.Heightmap;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
  * Villagers moving into kingdoms. Every morning (when the overworld's day count goes up, so sleeping through the
- * night counts too) each kingdom with a Town Hall and room under its level's villager cap gets one new villager,
- * who appears near the hall (and with a Tavern, one more at night: see {@link KingdomTavern}). The hall has to be loaded (a player nearby), the same way vanilla villages only grow
- * while loaded. Server side only.
+ * night counts too) each kingdom with a Town Hall and a free home gets one new villager (and with a Tavern, one more
+ * at night: see {@link KingdomTavern}). Homes are the beds in the kingdom's houses (see {@link KingdomHouses}): the
+ * newcomer turns up inside a house with a free bed and makes that bed its own. The house has to be loaded (a player
+ * nearby), the same way vanilla villages only grow while loaded. Server side only.
  */
 public final class KingdomVillagers {
 
@@ -29,14 +30,13 @@ public final class KingdomVillagers {
     public static final String RESIDENT_TAG = "kingdoms.resident";
 
     private static final long DAY_LENGTH = 24000L;
-    /** How far from the Town Hall, in blocks, a new villager can turn up. */
-    private static final int ARRIVAL_RANGE = 6;
 
     private KingdomVillagers() {
     }
 
     /** Called every server tick by each loader. Looks once a second for a new day. */
     public static void tick(MinecraftServer server) {
+        KingdomHouses.tick(server);
         KingdomTavern.tick(server);
         KingdomCelebration.tick(server);
         KingdomResearch.tick(server);
@@ -65,7 +65,7 @@ public final class KingdomVillagers {
     }
 
     /**
-     * A new morning for one kingdom: if it has a Town Hall and room for another villager, one moves in.
+     * A new morning for one kingdom: if it has a Town Hall and a free home in a loaded house, a villager moves in.
      *
      * @return the villager who moved in, if one did
      */
@@ -74,61 +74,76 @@ public final class KingdomVillagers {
     }
 
     /**
-     * If the kingdom has a Town Hall that's loaded and room for another villager, one moves in next to the hall and
-     * the members are told with {@code message} (given the kingdom's name, villager count and cap).
+     * If the kingdom has a Town Hall and a free home (a bed nobody has, in a valid house that's loaded), a villager
+     * moves into that house and the members are told with {@code message} (given the kingdom's name, its villager count
+     * and its number of homes). Homeless villagers get first pick of the free homes, and while the kingdom has more
+     * villagers than homes (say a house is broken), nobody new moves in.
      *
      * @return the villager who moved in, if one did
      */
     static Optional<Villager> moveIn(MinecraftServer server, Kingdom kingdom, String message) {
-        KingdomLevel level = kingdom.levelInfo();
-        if (kingdom.residents().size() >= level.villagerCap() || kingdom.townHall().isEmpty()) {
+        if (kingdom.townHall().isEmpty()) {
             return Optional.empty();
         }
-        GlobalPos hall = kingdom.townHall().get();
-        ServerLevel world = server.getLevel(hall.dimension());
-        // Like a village, a kingdom only grows while someone is around to keep it loaded.
-        if (world == null || !world.isPositionEntityTicking(hall.pos())) {
+        // Look at the loaded houses again first, so a house that's been fixed (or broken) since its last scan counts.
+        Map<House, HouseScan.Result> scans = new LinkedHashMap<>();
+        for (House house : KingdomHouses.of(server, kingdom)) {
+            ServerLevel world = server.getLevel(house.pos().dimension());
+            // Like a village, a kingdom only grows while someone is around to keep it loaded.
+            if (world != null && world.isPositionEntityTicking(house.pos().pos()) && (!house.valid() || house.hasRoom())) {
+                scans.put(house, KingdomHouses.rescan(world, house));
+            }
+        }
+        KingdomHouses.settle(server, kingdom);
+        int homes = KingdomHouses.homes(server, kingdom);
+        if (kingdom.residents().size() >= homes) {
             return Optional.empty();
         }
-        Villager villager = EntityType.VILLAGER.create(world);
-        if (villager == null) {
-            return Optional.empty();
+        for (Map.Entry<House, HouseScan.Result> entry : scans.entrySet()) {
+            House house = entry.getKey();
+            ServerLevel world = server.getLevel(house.pos().dimension());
+            if (world == null || !house.hasRoom()) {
+                continue;
+            }
+            Optional<BlockPos> spot = entry.getValue().floor().stream()
+                    .filter(pos -> world.noCollision(EntityType.VILLAGER.getSpawnAABB(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5)))
+                    .findFirst();
+            if (spot.isEmpty()) {
+                continue;
+            }
+            Villager villager = EntityType.VILLAGER.create(world);
+            if (villager == null) {
+                return Optional.empty();
+            }
+            BlockPos pos = spot.get();
+            villager.moveTo(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, world.getRandom().nextFloat() * 360.0F, 0.0F);
+            villager.finalizeSpawn(world, world.getCurrentDifficultyAt(pos), MobSpawnType.EVENT, null);
+            villager.addTag(RESIDENT_TAG);
+            if (!world.addFreshEntity(villager)) {
+                return Optional.empty();
+            }
+            KingdomData.get(server).addResident(kingdom, villager.getUUID());
+            KingdomHouses.moveInto(world, house, villager);
+            Kingdoms.broadcast(server, kingdom, Component.translatable(message,
+                    kingdom.displayName(), kingdom.residents().size(), homes));
+            return Optional.of(villager);
         }
-        BlockPos pos = arrivalSpot(world, hall.pos(), world.getRandom());
-        villager.moveTo(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, world.getRandom().nextFloat() * 360.0F, 0.0F);
-        villager.finalizeSpawn(world, world.getCurrentDifficultyAt(pos), MobSpawnType.EVENT, null);
-        villager.addTag(RESIDENT_TAG);
-        if (!world.addFreshEntity(villager)) {
-            return Optional.empty();
-        }
-        KingdomData.get(server).addResident(kingdom, villager.getUUID());
-        Kingdoms.broadcast(server, kingdom, Component.translatable(message,
-                kingdom.displayName(), kingdom.residents().size(), level.villagerCap()));
-        return Optional.of(villager);
+        return Optional.empty();
     }
 
-    /** A spot on the ground near the Town Hall with room for a villager, or just above the hall if none turns up. */
-    private static BlockPos arrivalSpot(ServerLevel world, BlockPos hall, RandomSource random) {
-        for (int attempt = 0; attempt < 16; attempt++) {
-            int x = hall.getX() + random.nextIntBetweenInclusive(-ARRIVAL_RANGE, ARRIVAL_RANGE);
-            int z = hall.getZ() + random.nextIntBetweenInclusive(-ARRIVAL_RANGE, ARRIVAL_RANGE);
-            if (Math.abs(x - hall.getX()) < 2 && Math.abs(z - hall.getZ()) < 2) {
-                continue; // not on top of the hall
-            }
-            int y = world.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
-            BlockPos pos = new BlockPos(x, y, z);
-            if (world.isPositionEntityTicking(pos) && Math.abs(y - hall.getY()) <= 8 && world.getFluidState(pos.below()).isEmpty()
-                    && world.noCollision(EntityType.VILLAGER.getSpawnAABB(x + 0.5, y, z + 0.5))) {
-                return pos;
-            }
-        }
-        return hall.above();
+    /** A villager joined from outside (a worker taking a job): it gets a free home if there is one. */
+    private static void joined(ServerLevel world, Kingdom kingdom, Villager villager) {
+        KingdomData data = KingdomData.get(world.getServer());
+        data.removeResident(villager.getUUID());
+        villager.addTag(RESIDENT_TAG);
+        data.addResident(kingdom, villager.getUUID());
+        KingdomHouses.settle(world.getServer(), kingdom);
     }
 
     /**
      * The villager who works at a Town Hall (the Advisor) belongs to that hall's kingdom. Called now and then for
      * every Advisor, so it also catches ones who took the job before the kingdom was founded. The Advisor joins even
-     * if the kingdom is at its villager cap, and counts toward it from then on. A villager from another kingdom
+     * if the kingdom has no free home (it's homeless until one turns up), and takes up a home from then on. A villager from another kingdom
      * moves over.
      *
      * @return true if the villager just joined
@@ -148,11 +163,9 @@ public final class KingdomVillagers {
             return false;
         }
         Kingdom kingdom = found.get();
-        data.removeResident(villager.getUUID());
-        villager.addTag(RESIDENT_TAG);
-        data.addResident(kingdom, villager.getUUID());
+        joined(world, kingdom, villager);
         Kingdoms.broadcast(world.getServer(), kingdom, Component.translatable("kingdoms.kingdom.advisor_joined",
-                kingdom.displayName(), kingdom.residents().size(), kingdom.levelInfo().villagerCap()));
+                kingdom.displayName(), kingdom.residents().size(), KingdomHouses.homes(world.getServer(), kingdom)));
         return true;
     }
 
@@ -160,7 +173,7 @@ public final class KingdomVillagers {
      * A villager who works at one of the kingdom's work blocks (a Scholar at a Scholar's Desk, an Innkeeper at a Tavern,
      * a Lookout at a Watchtower) on a kingdom's land belongs to that kingdom, the same way the Advisor does. Without
      * this, only villagers who moved in through the Town Hall count, so a villager from a nearby village (or a spawn
-     * egg) that takes the job would never do any work. Like the Advisor, it joins even past the villager cap. Called
+     * egg) that takes the job would never do any work. Like the Advisor, it joins even without a free home. Called
      * now and then for every villager.
      *
      * @return true if the villager just joined
@@ -191,15 +204,13 @@ public final class KingdomVillagers {
             return false;
         }
         Kingdom kingdom = found.get();
-        data.removeResident(villager.getUUID());
-        villager.addTag(RESIDENT_TAG);
-        data.addResident(kingdom, villager.getUUID());
+        joined(world, kingdom, villager);
         Kingdoms.broadcast(world.getServer(), kingdom, Component.translatable("kingdoms.kingdom.worker_joined",
                 // The job's name, e.g. "Scholar" (Villager#getTypeName does the same, but isn't public).
                 Component.translatable("entity.minecraft.villager."
                         + net.minecraft.core.registries.BuiltInRegistries.VILLAGER_PROFESSION.getKey(profession).getPath()),
                 kingdom.displayName(),
-                kingdom.residents().size(), kingdom.levelInfo().villagerCap()));
+                kingdom.residents().size(), KingdomHouses.homes(world.getServer(), kingdom)));
         return true;
     }
 

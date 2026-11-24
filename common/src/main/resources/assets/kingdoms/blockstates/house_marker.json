@@ -1,0 +1,19 @@
+{
+  "variants": {
+    "facing=north": {
+      "model": "kingdoms:block/house_marker"
+    },
+    "facing=east": {
+      "model": "kingdoms:block/house_marker",
+      "y": 90
+    },
+    "facing=south": {
+      "model": "kingdoms:block/house_marker",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "kingdoms:block/house_marker",
+      "y": 270
+    }
+  }
+}

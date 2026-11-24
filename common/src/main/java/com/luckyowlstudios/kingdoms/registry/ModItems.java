@@ -24,6 +24,9 @@ public final class ModItems {
     public static final Supplier<BlockItem> TAVERN = Services.REGISTRY.register(BuiltInRegistries.ITEM, "tavern",
             () -> new BlockItem(ModBlocks.TAVERN.get(), new Item.Properties()));
 
+    public static final Supplier<BlockItem> HOUSE_MARKER = Services.REGISTRY.register(BuiltInRegistries.ITEM, "house_marker",
+            () -> new BlockItem(ModBlocks.HOUSE_MARKER.get(), new Item.Properties()));
+
     private ModItems() {
     }
 

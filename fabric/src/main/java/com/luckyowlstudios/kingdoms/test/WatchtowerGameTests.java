@@ -58,6 +58,8 @@ public class WatchtowerGameTests implements FabricGameTest {
         Kingdom kingdom = Kingdoms.tryCreate(leader, new CreateKingdomPayload(hall, "Lookoutburg " + level.getGameTime(), DyeColor.GREEN)).orElseThrow();
         BlockPos tower = hall.offset(3, 0, 0);
         level.setBlockAndUpdate(tower, ModBlocks.WATCHTOWER.get().defaultBlockState());
+        // A house for the Lookout to move into, in the hall's chunk.
+        BlockPos marker = TestHouses.build(level, hall.offset(5, 0, 5), 1, true);
         // Keep the land loaded, like a nearby player would.
         ChunkClaim center = ChunkClaim.of(GlobalPos.of(level.dimension(), hall));
         for (int dx = -1; dx <= 1; dx++) {
@@ -72,6 +74,8 @@ public class WatchtowerGameTests implements FabricGameTest {
                             "forced chunks aren't loaded yet");
                 }
             }
+            // Wait for the light to spread through the house too.
+            TestHouses.assertReady(level, marker);
         }).thenExecute(() -> {
             List<Entity> spawned = new ArrayList<>();
             try {

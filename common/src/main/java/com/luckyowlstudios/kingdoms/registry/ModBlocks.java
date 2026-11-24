@@ -47,6 +47,16 @@ public final class ModBlocks {
                     .sound(SoundType.WOOD)
                     .ignitedByLava()));
 
+    /** Marks a house as a home for villagers. See {@link com.luckyowlstudios.kingdoms.kingdom.KingdomHouses}. */
+    public static final Supplier<com.luckyowlstudios.kingdoms.block.HouseMarkerBlock> HOUSE_MARKER = Services.REGISTRY.register(BuiltInRegistries.BLOCK, "house_marker",
+            () -> new com.luckyowlstudios.kingdoms.block.HouseMarkerBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.WOOD)
+                    .instrument(NoteBlockInstrument.BASS)
+                    .strength(1.0F)
+                    .sound(SoundType.WOOD)
+                    .noOcclusion()
+                    .ignitedByLava()));
+
     private ModBlocks() {
     }
 
