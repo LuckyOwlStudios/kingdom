@@ -1,7 +1,6 @@
 package com.luckyowlstudios.kingdoms.client.screen;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.luckyowlstudios.kingdoms.Constants;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomRank;
 import com.luckyowlstudios.kingdoms.network.KingdomActionPayload;
 import com.luckyowlstudios.kingdoms.network.KingdomActionPayload.Action;
@@ -19,21 +18,14 @@ import net.minecraft.client.gui.components.tabs.TabManager;
 import net.minecraft.client.gui.components.tabs.TabNavigationBar;
 import net.minecraft.client.gui.navigation.ScreenRectangle;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.BannerItem;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
-import net.minecraft.world.level.ChunkPos;
-import net.minecraft.util.Mth;
 
 import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.Set;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -44,10 +36,7 @@ import java.util.function.Consumer;
  */
 public class KingdomScreen extends Screen {
 
-    private static final ResourceLocation MAP_BACKGROUND = ResourceLocation.withDefaultNamespace("textures/map/map_background.png");
-    private static final int MAP_SIZE = 128;
-    private static final ResourceLocation TOWN_HALL_ICON = Constants.id("textures/map/decorations/townhall.png");
-    private static final int TOWN_HALL_ICON_SIZE = 8;
+    private static final int MAP_SIZE = KingdomMapRenderer.MAP_SIZE;
 
     private KingdomViewPayload view;
     private final TabManager tabManager = new TabManager(this::addRenderableWidget, this::removeWidget);
@@ -69,6 +58,9 @@ public class KingdomScreen extends Screen {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.screen instanceof KingdomScreen screen) {
             screen.update(view);
+        } else if (minecraft.screen instanceof KingdomMapScreen map) {
+            map.update(view);
+            map.parent().update(view);
         } else {
             minecraft.setScreen(new KingdomScreen(view));
         }
@@ -139,6 +131,19 @@ public class KingdomScreen extends Screen {
         if (this.tabManager.getCurrentTab() instanceof KingdomTab tab) {
             tab.renderExtras(graphics, mouseX, mouseY);
         }
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (super.mouseClicked(mouseX, mouseY, button)) {
+            return true;
+        }
+        if (button == 0 && this.tabManager.getCurrentTab() == this.overview && this.overview.isOverMap(mouseX, mouseY)
+                && this.minecraft != null) {
+            this.minecraft.setScreen(new KingdomMapScreen(this, this.view));
+            return true;
+        }
+        return false;
     }
 
     @Override
@@ -252,95 +257,39 @@ public class KingdomScreen extends Screen {
                     ? Component.translatable("kingdoms.kingdom.screen.claimed_chunks.one")
                     : Component.translatable("kingdoms.kingdom.screen.claimed_chunks", claimCount), left, top + 74, 0xA0A0A0);
 
-            // The kingdom map, on vanilla's map background.
-            int mapLeft = centerX + 10;
-            graphics.blit(MAP_BACKGROUND, mapLeft - 6, top - 6, 0, 0, MAP_SIZE + 12, MAP_SIZE + 12, MAP_SIZE + 12, MAP_SIZE + 12);
-            Minecraft minecraft = Minecraft.getInstance();
-            MapItemSavedData data = KingdomScreen.this.view.map().map(id -> minecraft.level == null ? null : minecraft.level.getMapData(id)).orElse(null);
-            if (data != null) {
-                PoseStack pose = graphics.pose();
-                pose.pushPose();
-                pose.translate(mapLeft, top, 1.0F);
-                minecraft.gameRenderer.getMapRenderer().render(pose, graphics.bufferSource(), KingdomScreen.this.view.map().get(), data, true, 0xF000F0);
-                pose.popPose();
-                graphics.flush();
-                KingdomScreen.this.renderClaims(graphics, mapLeft, top);
+            // The kingdom map, on vanilla's map background. Clicking it opens the full map screen.
+            int mapLeft = this.mapLeft();
+            KingdomMapRenderer.drawMap(graphics, KingdomScreen.this.view, mapLeft, top, 1.0F);
+            boolean overHall = false;
+            if (KingdomMapRenderer.mapData(KingdomScreen.this.view).isPresent()) {
+                for (KingdomMapRenderer.Icon icon : KingdomMapRenderer.icons(KingdomScreen.this.view)) {
+                    int x = mapLeft + Math.round(icon.mapX());
+                    int y = top + Math.round(icon.mapY());
+                    KingdomMapRenderer.drawIcon(graphics, icon, x, y, KingdomMapRenderer.ICON_SIZE, false);
+                    overHall |= Math.abs(mouseX - x) <= 5 && Math.abs(mouseY - y) <= 5;
+                }
             }
-            boolean overHall = data != null && KingdomScreen.this.renderTownHallIcon(graphics, mapLeft, top, mouseX, mouseY);
             graphics.drawCenteredString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.map_scale",
                     KingdomScreen.this.view.mapScale(), 4), mapLeft + MAP_SIZE / 2, top + MAP_SIZE + 10, 0xA0A0A0);
             if (overHall) {
                 graphics.renderTooltip(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.town_hall_of",
                         KingdomScreen.this.coloredName()), mouseX, mouseY);
-            } else if (mouseX >= mapLeft && mouseX < mapLeft + MAP_SIZE && mouseY >= top && mouseY < top + MAP_SIZE) {
-                graphics.renderTooltip(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.map_hint"), mouseX, mouseY);
+            } else if (this.isOverMap(mouseX, mouseY)) {
+                graphics.renderComponentTooltip(KingdomScreen.this.font, List.of(
+                        Component.translatable("kingdoms.kingdom.screen.map_open"),
+                        Component.translatable("kingdoms.kingdom.screen.map_hint").withStyle(net.minecraft.ChatFormatting.GRAY)), mouseX, mouseY);
             }
         }
-    }
 
-    /** The block at the map's left (or top) edge, worked out the same way vanilla fills a map in (MapItem#update). */
-    private int mapWorldLeft(int center) {
-        int scale = 1 << this.view.mapScale();
-        return (center / scale - MAP_SIZE / 2) * scale;
-    }
-
-    /**
-     * Draws the Town Hall icon where the hall stands on the map (kept on the map's edge if the hall is off it).
-     *
-     * @return true if the mouse is over the icon
-     */
-    private boolean renderTownHallIcon(GuiGraphics graphics, int mapLeft, int mapTop, int mouseX, int mouseY) {
-        float blocksPerPixel = 1 << this.view.mapScale();
-        BlockPos hall = this.view.townHall();
-        int half = TOWN_HALL_ICON_SIZE / 2;
-        int x = mapLeft + Mth.clamp(Mth.floor((hall.getX() + 0.5F - this.mapWorldLeft(this.view.mapCenterX())) / blocksPerPixel), half, MAP_SIZE - half);
-        int y = mapTop + Mth.clamp(Mth.floor((hall.getZ() + 0.5F - this.mapWorldLeft(this.view.mapCenterZ())) / blocksPerPixel), half, MAP_SIZE - half);
-        PoseStack pose = graphics.pose();
-        pose.pushPose();
-        pose.translate(0.0F, 0.0F, 3.0F); // above the map and the claim shading
-        graphics.blit(TOWN_HALL_ICON, x - half, y - half, 0, 0, TOWN_HALL_ICON_SIZE, TOWN_HALL_ICON_SIZE,
-                TOWN_HALL_ICON_SIZE, TOWN_HALL_ICON_SIZE);
-        pose.popPose();
-        return mouseX >= x - half - 1 && mouseX < x + half + 1 && mouseY >= y - half - 1 && mouseY < y + half + 1;
-    }
-
-    /**
-     * Shades the kingdom's claimed chunks on the map in its colour, with an outline around the edge of its land.
-     * The map is centred on {@code mapCenterX/Z} and each map pixel covers {@code 2^scale} blocks.
-     */
-    private void renderClaims(GuiGraphics graphics, int mapLeft, int mapTop) {
-        Set<ChunkPos> claims = new HashSet<>(this.view.claims());
-        if (claims.isEmpty()) {
-            return;
+        int mapLeft() {
+            return this.centerX() + 10;
         }
-        int rgb = this.view.color().getTextColor() & 0xFFFFFF;
-        int fill = 0x55000000 | rgb;
-        int edge = 0xDD000000 | rgb;
-        float blocksPerPixel = 1 << this.view.mapScale();
-        float worldLeft = this.mapWorldLeft(this.view.mapCenterX());
-        float worldTop = this.mapWorldLeft(this.view.mapCenterZ());
 
-        graphics.enableScissor(mapLeft, mapTop, mapLeft + MAP_SIZE, mapTop + MAP_SIZE);
-        PoseStack pose = graphics.pose();
-        pose.pushPose();
-        pose.translate(0.0F, 0.0F, 2.0F); // above the map
-        for (ChunkPos chunk : claims) {
-            int x0 = mapLeft + Mth.floor((chunk.getMinBlockX() - worldLeft) / blocksPerPixel);
-            int z0 = mapTop + Mth.floor((chunk.getMinBlockZ() - worldTop) / blocksPerPixel);
-            int x1 = Math.max(x0 + 1, mapLeft + Mth.floor((chunk.getMaxBlockX() + 1 - worldLeft) / blocksPerPixel));
-            int z1 = Math.max(z0 + 1, mapTop + Mth.floor((chunk.getMaxBlockZ() + 1 - worldTop) / blocksPerPixel));
-            if (x1 < mapLeft || z1 < mapTop || x0 > mapLeft + MAP_SIZE || z0 > mapTop + MAP_SIZE) {
-                continue;
-            }
-            graphics.fill(x0, z0, x1, z1, fill);
-            // Outline only where the kingdom's land ends, so neighbouring claims read as one area.
-            if (!claims.contains(new ChunkPos(chunk.x, chunk.z - 1))) graphics.fill(x0, z0, x1, z0 + 1, edge);
-            if (!claims.contains(new ChunkPos(chunk.x, chunk.z + 1))) graphics.fill(x0, z1 - 1, x1, z1, edge);
-            if (!claims.contains(new ChunkPos(chunk.x - 1, chunk.z))) graphics.fill(x0, z0, x0 + 1, z1, edge);
-            if (!claims.contains(new ChunkPos(chunk.x + 1, chunk.z))) graphics.fill(x1 - 1, z0, x1, z1, edge);
+        boolean isOverMap(double mouseX, double mouseY) {
+            int left = this.mapLeft();
+            int top = this.top();
+            return mouseX >= left && mouseX < left + MAP_SIZE && mouseY >= top && mouseY < top + MAP_SIZE;
         }
-        pose.popPose();
-        graphics.disableScissor();
     }
 
     /** Everyone in the kingdom, and the ban list, with rank buttons and an invite box. */
