@@ -72,6 +72,12 @@ public final class KingdomCommand {
                                 .then(Commands.argument("kingdom", StringArgumentType.greedyString()).suggests(KINGDOMS)
                                         .executes(context -> setLevel(context.getSource(), IntegerArgumentType.getInteger(context, "level"),
                                                 KingdomData.get(context.getSource().getServer()).byName(StringArgumentType.getString(context, "kingdom")))))))
+                // Operators: finish a kingdom's research straight away.
+                .then(Commands.literal("finishresearch").requires(source -> source.hasPermission(2))
+                        .executes(context -> finishResearch(context.getSource(), Kingdoms.ofPlayer(context.getSource().getPlayerOrException())))
+                        .then(Commands.argument("kingdom", StringArgumentType.greedyString()).suggests(KINGDOMS)
+                                .executes(context -> finishResearch(context.getSource(),
+                                        KingdomData.get(context.getSource().getServer()).byName(StringArgumentType.getString(context, "kingdom"))))))
                 .then(DiplomacyCommand.build())
                 .then(Commands.literal("banner")
                         .executes(context -> {
@@ -87,6 +93,19 @@ public final class KingdomCommand {
         }
         Kingdoms.setLevel(source.getServer(), kingdom.get(), level);
         source.sendSuccess(() -> Component.translatable("kingdoms.kingdom.level.set", kingdom.get().displayName(), level), true);
+        return 1;
+    }
+
+    private static int finishResearch(CommandSourceStack source, Optional<Kingdom> kingdom) {
+        if (kingdom.isEmpty()) {
+            source.sendFailure(Component.translatable("kingdoms.kingdom.not_found"));
+            return 0;
+        }
+        if (!KingdomResearch.finish(source.getServer(), kingdom.get())) {
+            source.sendFailure(Component.translatable("kingdoms.research.command.nothing", kingdom.get().displayName()));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.translatable("kingdoms.research.command.finished", kingdom.get().displayName()), true);
         return 1;
     }
 

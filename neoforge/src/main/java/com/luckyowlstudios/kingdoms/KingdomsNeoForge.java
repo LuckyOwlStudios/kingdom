@@ -51,6 +51,7 @@ public class KingdomsNeoForge {
     private static void onBuildCreativeTabs(BuildCreativeModeTabContentsEvent event) {
         if (event.getTabKey() == CreativeModeTabs.FUNCTIONAL_BLOCKS) {
             event.accept(ModItems.TOWN_HALL.get());
+            event.accept(ModItems.SCHOLARS_DESK.get());
             event.accept(ModItems.WATCHTOWER.get());
         } else if (event.getTabKey() == CreativeModeTabs.SPAWN_EGGS) {
             event.accept(ModItems.GUIDE_SPAWN_EGG.get());
@@ -75,6 +76,12 @@ public class KingdomsNeoForge {
                 (payload, context) -> KingdomsClient.handle(payload));
         registrar.playToServer(DiplomacyActionPayload.TYPE, DiplomacyActionPayload.STREAM_CODEC,
                 (payload, context) -> Diplomacy.handle((ServerPlayer) context.player(), payload));
+        registrar.playToClient(com.luckyowlstudios.kingdoms.network.ResearchViewPayload.TYPE,
+                com.luckyowlstudios.kingdoms.network.ResearchViewPayload.STREAM_CODEC,
+                (payload, context) -> KingdomsClient.handle(payload));
+        registrar.playToServer(com.luckyowlstudios.kingdoms.network.ResearchActionPayload.TYPE,
+                com.luckyowlstudios.kingdoms.network.ResearchActionPayload.STREAM_CODEC,
+                (payload, context) -> com.luckyowlstudios.kingdoms.kingdom.KingdomResearch.handle((ServerPlayer) context.player(), payload));
         registrar.playToServer(CloseTownHallPayload.TYPE, CloseTownHallPayload.STREAM_CODEC,
                 (payload, context) -> TownHallBlockEntity.onScreenClosed((ServerPlayer) context.player(), payload.townHall()));
     }

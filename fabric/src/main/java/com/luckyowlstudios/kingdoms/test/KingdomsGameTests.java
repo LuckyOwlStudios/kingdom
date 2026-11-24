@@ -10,7 +10,9 @@ import com.luckyowlstudios.kingdoms.kingdom.KingdomVillagers;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomMaps;
 import com.luckyowlstudios.kingdoms.kingdom.Homecoming;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomPerkEffects;
+import com.luckyowlstudios.kingdoms.kingdom.KingdomPerk;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomPerks;
+import com.luckyowlstudios.kingdoms.kingdom.KingdomResearch;
 import com.luckyowlstudios.kingdoms.kingdom.SharedVault;
 import com.luckyowlstudios.kingdoms.kingdom.SharedXp;
 import com.luckyowlstudios.kingdoms.kingdom.TaxCollector;
@@ -55,6 +57,122 @@ public class KingdomsGameTests implements FabricGameTest {
         BlockPos pos = new BlockPos(chunkX * 16 + 4, origin.getY() + 2, 4096 * 16 + 4);
         helper.getLevel().setBlockAndUpdate(pos, ModBlocks.TOWN_HALL.get().defaultBlockState());
         return pos;
+    }
+
+    /** Researches the next tier of a perk and finishes the research straight away, as if the Scholars were done. */
+    private static boolean unlockNow(ServerPlayer player, KingdomPerk perk) {
+        if (!KingdomPerks.upgrade(player, perk)) {
+            return false;
+        }
+        Kingdoms.ofPlayer(player).ifPresent(kingdom -> KingdomResearch.finish(player.server, kingdom));
+        return true;
+    }
+
+    private static boolean unlockNow(ServerPlayer player, String perkId) {
+        return KingdomPerks.byId(net.minecraft.resources.ResourceLocation.parse(perkId)).map(perk -> unlockNow(player, perk)).orElse(false);
+    }
+
+    @GameTest(template = EMPTY_STRUCTURE)
+    public void scholarsDeskIsAJobSite(GameTestHelper helper) {
+        BlockPos pos = new BlockPos(1, 2, 1);
+        helper.setBlock(pos, ModBlocks.SCHOLARS_DESK.get());
+        helper.succeedWhen(() -> helper.assertTrue(helper.getLevel().getPoiManager().getType(helper.absolutePos(pos))
+                .map(type -> type.is(ModVillagers.SCHOLARS_DESK_POI)).orElse(false), "the Scholar's Desk isn't a point of interest"));
+    }
+
+    @GameTest(template = EMPTY_STRUCTURE, timeoutTicks = 1200)
+    public void villagerAtDeskBecomesScholar(GameTestHelper helper) {
+        helper.setBlock(new BlockPos(1, 0, 1), ModBlocks.SCHOLARS_DESK.get());
+        Villager villager = helper.spawn(EntityType.VILLAGER, 3, 0, 3);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(villager.isAlive(), "villager died");
+            helper.assertTrue(villager.getVillagerData().getProfession() == ModVillagers.SCHOLAR_PROFESSION.get(),
+                    "villager hasn't become a Scholar yet (is " + villager.getVillagerData().getProfession() + ")");
+        });
+    }
+
+    @GameTest(template = EMPTY_STRUCTURE, timeoutTicks = 400)
+    public void researchTakesTimeAndScholarsShareTheWork(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos hall = isolatedHall(helper);
+        ServerPlayer leader = helper.makeMockServerPlayerInLevel();
+        leader.moveTo(hall.getX() + 1.5, hall.getY(), hall.getZ() + 0.5);
+        Kingdom kingdom = Kingdoms.tryCreate(leader, new CreateKingdomPayload(hall, "Scholarton " + level.getGameTime(), DyeColor.PURPLE)).orElseThrow();
+        Kingdoms.setLevel(level.getServer(), kingdom, 3);
+        BlockPos deskA = hall.offset(3, 0, 0);
+        BlockPos deskB = hall.offset(-3, 0, 0);
+        level.setBlockAndUpdate(deskA, ModBlocks.SCHOLARS_DESK.get().defaultBlockState());
+        level.setBlockAndUpdate(deskB, ModBlocks.SCHOLARS_DESK.get().defaultBlockState());
+        // Villagers only move in while the Town Hall is loaded, so keep it loaded like a nearby player would.
+        ChunkClaim center = ChunkClaim.of(GlobalPos.of(level.dimension(), hall));
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                level.setChunkForced(center.x() + dx, center.z() + dz, true);
+            }
+        }
+        helper.startSequence().thenWaitUntil(() -> {
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    helper.assertTrue(level.isPositionEntityTicking(new net.minecraft.world.level.ChunkPos(center.x() + dx, center.z() + dz).getMiddleBlockPosition(hall.getY())),
+                            "forced chunks aren't loaded yet");
+                }
+            }
+        }).thenExecute(() -> {
+            java.util.List<Villager> villagers = new java.util.ArrayList<>();
+            try {
+                var server = level.getServer();
+                int points = KingdomPerks.availablePoints(kingdom);
+                helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.WATCHTOWERS), "couldn't start researching Watchtowers");
+                helper.assertTrue(kingdom.research().isPresent(), "no research started");
+                helper.assertTrue(kingdom.perkTier(KingdomPerks.WATCHTOWERS.id()) == 0, "Watchtowers unlocked straight away");
+                helper.assertTrue(KingdomPerks.availablePoints(kingdom) == points - KingdomPerks.WATCHTOWERS.tier(1).cost(),
+                        "the research's points weren't spent");
+                helper.assertFalse(KingdomPerks.upgrade(leader, KingdomPerks.BOUNTIFUL_HARVEST), "started a second research at once");
+                helper.assertTrue(KingdomResearch.workingScholars(server, kingdom) == 0, "Scholars counted before any moved in");
+
+                // Two residents take the Scholar job at the two desks.
+                for (BlockPos desk : java.util.List.of(deskA, deskB)) {
+                    Villager villager = KingdomVillagers.morning(server, kingdom).orElseThrow(
+                            () -> new net.minecraft.gametest.framework.GameTestAssertException("no villager moved in"));
+                    villagers.add(villager);
+                    villager.setVillagerData(villager.getVillagerData().setProfession(ModVillagers.SCHOLAR_PROFESSION.get()));
+                    villager.getBrain().setMemory(net.minecraft.world.entity.ai.memory.MemoryModuleType.JOB_SITE, GlobalPos.of(level.dimension(), desk));
+                }
+                helper.assertTrue(KingdomResearch.workingScholars(server, kingdom) == 2, "two Scholars should be working, counted "
+                        + KingdomResearch.workingScholars(server, kingdom));
+
+                // A Scholar whose desk is gone doesn't count.
+                level.removeBlock(deskB, false);
+                helper.assertTrue(KingdomResearch.workingScholars(server, kingdom) == 1, "a Scholar without a desk still counted");
+                level.setBlockAndUpdate(deskB, ModBlocks.SCHOLARS_DESK.get().defaultBlockState());
+
+                // The research is saved with the kingdom, progress and all.
+                int duration = KingdomPerks.WATCHTOWERS.tier(1).researchSeconds();
+                helper.assertFalse(KingdomResearch.work(server, kingdom, duration - 1), "research finished early");
+                var ops = level.registryAccess().createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE);
+                Kingdom loaded = Kingdom.CODEC.parse(ops, Kingdom.CODEC.encodeStart(ops, kingdom).getOrThrow()).getOrThrow();
+                helper.assertTrue(loaded.research().map(r -> r.progress() == duration - 1).orElse(false), "research progress wasn't saved");
+
+                helper.assertTrue(KingdomResearch.work(server, kingdom, 1), "research didn't finish");
+                helper.assertTrue(kingdom.perkTier(KingdomPerks.WATCHTOWERS.id()) == 1 && kingdom.research().isEmpty(),
+                        "Watchtowers wasn't unlocked when the research finished");
+
+                // Cancelling gives the points back.
+                int before = KingdomPerks.availablePoints(kingdom);
+                helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.BOUNTIFUL_HARVEST), "couldn't start the next research");
+                helper.assertTrue(KingdomResearch.cancel(leader), "couldn't cancel");
+                helper.assertTrue(kingdom.research().isEmpty() && KingdomPerks.availablePoints(kingdom) == before,
+                        "cancelling didn't give the points back");
+            } finally {
+                Kingdoms.leave(leader);
+                villagers.forEach(net.minecraft.world.entity.Entity::discard);
+                for (int dx = -1; dx <= 1; dx++) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        level.setChunkForced(center.x() + dx, center.z() + dz, false);
+                    }
+                }
+            }
+        }).thenSucceed();
     }
 
     @GameTest(template = EMPTY_STRUCTURE)
@@ -395,13 +513,13 @@ public class KingdomsGameTests implements FabricGameTest {
         Kingdoms.join(member, name);
 
         helper.assertTrue(KingdomPerks.availablePoints(kingdom) == KingdomPerks.POINTS_PER_LEVEL, "a new kingdom should have one level's points");
-        helper.assertFalse(KingdomPerks.upgrade(leader, KingdomPerks.SHARED_XP), "unlocked Shared XP below its level");
+        helper.assertFalse(unlockNow(leader, KingdomPerks.SHARED_XP), "unlocked Shared XP below its level");
         Kingdoms.setLevel(level.getServer(), kingdom, 3);
-        helper.assertFalse(KingdomPerks.upgrade(member, KingdomPerks.SHARED_XP), "a plain member spent perk points");
-        helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.SHARED_XP.id().toString()), "leader couldn't unlock Shared XP");
-        helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.SHARED_XP), "leader couldn't upgrade Shared XP to tier 2");
+        helper.assertFalse(unlockNow(member, KingdomPerks.SHARED_XP), "a plain member spent perk points");
+        helper.assertTrue(unlockNow(leader, KingdomPerks.SHARED_XP.id().toString()), "leader couldn't unlock Shared XP");
+        helper.assertTrue(unlockNow(leader, KingdomPerks.SHARED_XP), "leader couldn't upgrade Shared XP to tier 2");
         helper.assertTrue(kingdom.perkTier(KingdomPerks.SHARED_XP.id()) == 2, "Shared XP should be tier 2");
-        helper.assertFalse(KingdomPerks.upgrade(leader, KingdomPerks.SHARED_XP), "tier 3 bought below its level");
+        helper.assertFalse(unlockNow(leader, KingdomPerks.SHARED_XP), "tier 3 bought below its level");
         int points = KingdomPerks.availablePoints(kingdom);
         helper.assertTrue(points == 3 * KingdomPerks.POINTS_PER_LEVEL - 2, "wrong points left: " + points);
 
@@ -445,7 +563,7 @@ public class KingdomsGameTests implements FabricGameTest {
         helper.assertTrue(a.totalExperience == 0 && b.totalExperience == 0, "XP was shared without the perk");
 
         Kingdoms.setLevel(level.getServer(), kingdom, 2);
-        helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.SHARED_XP), "couldn't unlock Shared XP");
+        helper.assertTrue(unlockNow(leader, KingdomPerks.SHARED_XP), "couldn't unlock Shared XP");
         // Tier 1, three members: each other member gets 1/8.
         helper.assertTrue(Math.abs(SharedXp.share(80, 3, 1) - 10) < 1e-9, "wrong share: " + SharedXp.share(80, 3, 1));
         helper.assertTrue(Math.abs(SharedXp.share(70, 2, 1) - 10) < 1e-9, "two members should share 1/7");
@@ -505,17 +623,17 @@ public class KingdomsGameTests implements FabricGameTest {
                 TaxCollector.morning(level.getServer(), kingdom);
                 helper.assertTrue(kingdom.taxes() == 0, "taxes without the perk");
 
-                helper.assertFalse(KingdomPerks.upgrade(leader, KingdomPerks.TAX_COLLECTOR), "unlocked Tax Collector without Trade Deals");
-                helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.BOUNTIFUL_HARVEST)
-                        && KingdomPerks.upgrade(leader, KingdomPerks.TRADE_DEALS), "couldn't unlock the perks before Tax Collector");
-                helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.TAX_COLLECTOR), "couldn't unlock Tax Collector");
+                helper.assertFalse(unlockNow(leader, KingdomPerks.TAX_COLLECTOR), "unlocked Tax Collector without Trade Deals");
+                helper.assertTrue(unlockNow(leader, KingdomPerks.BOUNTIFUL_HARVEST)
+                        && unlockNow(leader, KingdomPerks.TRADE_DEALS), "couldn't unlock the perks before Tax Collector");
+                helper.assertTrue(unlockNow(leader, KingdomPerks.TAX_COLLECTOR), "couldn't unlock Tax Collector");
                 TaxCollector.morning(level.getServer(), kingdom);
                 helper.assertTrue(kingdom.taxes() == 2, "tier 1 should take 1 per villager, got " + kingdom.taxes());
-                helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.TAX_COLLECTOR), "couldn't upgrade Tax Collector");
+                helper.assertTrue(unlockNow(leader, KingdomPerks.TAX_COLLECTOR), "couldn't upgrade Tax Collector");
                 TaxCollector.morning(level.getServer(), kingdom);
                 helper.assertTrue(kingdom.taxes() == 2 + 3, "tier 2: the farmer should pay 2, got " + (kingdom.taxes() - 2));
                 Kingdoms.setLevel(level.getServer(), kingdom, 4);
-                helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.TAX_COLLECTOR), "couldn't buy Tax Collector tier 3");
+                helper.assertTrue(unlockNow(leader, KingdomPerks.TAX_COLLECTOR), "couldn't buy Tax Collector tier 3");
                 TaxCollector.morning(level.getServer(), kingdom);
                 helper.assertTrue(kingdom.taxes() == 5 + 4, "tier 3: the journeyman farmer should pay 3, got " + (kingdom.taxes() - 5));
 
@@ -561,45 +679,45 @@ public class KingdomsGameTests implements FabricGameTest {
 
         // Fortified Walls: outsiders are stopped, members aren't; explosions only from tier 2.
         helper.assertFalse(KingdomPerkEffects.wallsStop(outsider, inside, KingdomPerkEffects.WALLS_BREAKING), "walls up before the perk");
-        helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.WATCHTOWERS) && KingdomPerks.upgrade(leader, KingdomPerks.FORTIFIED_WALLS),
+        helper.assertTrue(unlockNow(leader, KingdomPerks.WATCHTOWERS) && unlockNow(leader, KingdomPerks.FORTIFIED_WALLS),
                 "couldn't unlock Fortified Walls");
         helper.assertTrue(KingdomPerkEffects.wallsStop(outsider, inside, KingdomPerkEffects.WALLS_BREAKING), "an outsider can break blocks");
         helper.assertFalse(KingdomPerkEffects.wallsStop(member, inside, KingdomPerkEffects.WALLS_BREAKING), "a member can't break blocks");
         helper.assertFalse(KingdomPerkEffects.wallsStop(outsider, inside, KingdomPerkEffects.WALLS_USING), "tier 3 protection at tier 1");
         helper.assertFalse(KingdomPerkEffects.wallsStopExplosion(level, inside), "explosions stopped at tier 1");
-        helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.FORTIFIED_WALLS), "couldn't upgrade Fortified Walls");
+        helper.assertTrue(unlockNow(leader, KingdomPerks.FORTIFIED_WALLS), "couldn't upgrade Fortified Walls");
         helper.assertTrue(KingdomPerkEffects.wallsStopExplosion(level, inside), "explosions not stopped at tier 2");
         helper.assertFalse(KingdomPerkEffects.wallsStopExplosion(level, hall.offset(16 * 20, 0, 0)), "explosions stopped outside the land");
 
         // Bountiful Harvest only works on the kingdom's land.
         helper.assertTrue(KingdomPerkEffects.bountifulHarvestChance(level, inside) == 0, "harvest bonus before the perk");
-        helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.BOUNTIFUL_HARVEST), "couldn't unlock Bountiful Harvest");
+        helper.assertTrue(unlockNow(leader, KingdomPerks.BOUNTIFUL_HARVEST), "couldn't unlock Bountiful Harvest");
         helper.assertTrue(KingdomPerkEffects.bountifulHarvestChance(level, inside) > 0, "no harvest bonus on the land");
 
         // Trade Deals: at least one off for members, nothing for outsiders.
-        helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.TRADE_DEALS), "couldn't unlock Trade Deals");
+        helper.assertTrue(unlockNow(leader, KingdomPerks.TRADE_DEALS), "couldn't unlock Trade Deals");
         helper.assertTrue(KingdomPerkEffects.tradeDiscount(level, inside, member, 5) == 1, "members should get 1 off a 5 emerald trade");
         helper.assertTrue(KingdomPerkEffects.tradeDiscount(level, inside, member, 30) == 3, "members should get 10% off");
         helper.assertTrue(KingdomPerkEffects.tradeDiscount(level, inside, outsider, 30) == 0, "an outsider got a discount");
 
         // Expansion grows the land by a ring.
         int before = kingdom.claims().size();
-        helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.WELCOMING) && KingdomPerks.upgrade(leader, KingdomPerks.EXPANSION),
+        helper.assertTrue(unlockNow(leader, KingdomPerks.WELCOMING) && unlockNow(leader, KingdomPerks.EXPANSION),
                 "couldn't unlock Expansion");
         helper.assertTrue(kingdom.claimRadius() == KingdomLevel.of(KingdomLevel.MAX_LEVEL).claimRadius() + 1, "Expansion didn't add a ring");
         helper.assertTrue(kingdom.claims().size() == kingdom.landCap() && kingdom.claims().size() > before,
                 "land didn't grow: " + before + " to " + kingdom.claims().size());
 
         // Homecoming takes a member back to the Town Hall, then has a cooldown.
-        helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.SHARED_XP) && KingdomPerks.upgrade(leader, KingdomPerks.WELL_FED)
-                && KingdomPerks.upgrade(leader, KingdomPerks.HOMECOMING), "couldn't unlock Homecoming");
+        helper.assertTrue(unlockNow(leader, KingdomPerks.SHARED_XP) && unlockNow(leader, KingdomPerks.WELL_FED)
+                && unlockNow(leader, KingdomPerks.HOMECOMING), "couldn't unlock Homecoming");
         member.teleportTo(hall.getX() + 200.5, hall.getY() + 10, hall.getZ() + 0.5);
         helper.assertTrue(Homecoming.goHome(member), "couldn't go home");
         helper.assertTrue(member.distanceToSqr(hall.getCenter()) < 4 * 4, "member didn't arrive at the town hall");
         helper.assertFalse(Homecoming.goHome(member), "went home twice without a cooldown");
 
         // Shared Vault: at the Town Hall only, and its contents are saved with the kingdom.
-        helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.SHARED_VAULT), "couldn't unlock Shared Vault: "
+        helper.assertTrue(unlockNow(leader, KingdomPerks.SHARED_VAULT), "couldn't unlock Shared Vault: "
                 + KingdomPerks.availablePoints(kingdom) + " points left");
         helper.assertTrue(SharedVault.open(member), "couldn't open the vault at the town hall");
         member.closeContainer();

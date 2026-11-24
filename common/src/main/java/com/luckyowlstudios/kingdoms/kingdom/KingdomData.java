@@ -300,6 +300,11 @@ public final class KingdomData extends SavedData {
         this.setDirty();
     }
 
+    void setResearch(Kingdom kingdom, @org.jetbrains.annotations.Nullable KingdomResearch.Research research) {
+        kingdom.setResearch(research);
+        this.setDirty();
+    }
+
     void setTaxes(Kingdom kingdom, int taxes) {
         kingdom.setTaxes(taxes);
         this.setDirty();

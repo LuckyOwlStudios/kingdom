@@ -1,0 +1,9 @@
+{
+  "parent": "minecraft:block/orientable",
+  "textures": {
+    "top": "minecraft:block/cartography_table_top",
+    "front": "minecraft:block/chiseled_bookshelf_occupied",
+    "side": "minecraft:block/oak_planks",
+    "particle": "minecraft:block/oak_planks"
+  }
+}
