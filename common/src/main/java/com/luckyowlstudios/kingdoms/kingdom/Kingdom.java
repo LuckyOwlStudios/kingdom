@@ -43,8 +43,9 @@ public final class Kingdom {
             UUIDUtil.CODEC.listOf().optionalFieldOf("banned", List.of()).forGetter(kingdom -> List.copyOf(kingdom.banned)),
             Settings.CODEC.optionalFieldOf("settings", Settings.DEFAULT).forGetter(Kingdom::settings),
             MapId.CODEC.optionalFieldOf("map").forGetter(Kingdom::map),
-            ChunkClaim.CODEC.listOf().optionalFieldOf("claims", List.of()).forGetter(kingdom -> List.copyOf(kingdom.claims))
-    ).apply(instance, (id, name, color, founder, leader, members, invites, townHall, banner, officers, banned, settings, map, claims) -> {
+            ChunkClaim.CODEC.listOf().optionalFieldOf("claims", List.of()).forGetter(kingdom -> List.copyOf(kingdom.claims)),
+            Growth.MAP_CODEC.forGetter(kingdom -> new Growth(kingdom.level, List.copyOf(kingdom.residents)))
+    ).apply(instance, (id, name, color, founder, leader, members, invites, townHall, banner, officers, banned, settings, map, claims, growth) -> {
         Kingdom kingdom = new Kingdom(id, name, color, founder, leader.orElse(founder), new LinkedHashSet<>(members), townHall.orElse(null));
         kingdom.invites.addAll(invites);
         kingdom.banner = banner.orElse(ItemStack.EMPTY);
@@ -53,8 +54,21 @@ public final class Kingdom {
         kingdom.settings = settings;
         kingdom.map = map.orElse(null);
         kingdom.claims.addAll(claims);
+        kingdom.level = Math.clamp(growth.level(), 1, KingdomLevel.MAX_LEVEL);
+        kingdom.residents.addAll(growth.residents());
         return kingdom;
     }));
+
+    /**
+     * Level and villagers, saved as top-level fields ({@code level}, {@code residents}) but grouped so the kingdom
+     * codec stays under the 16-field limit.
+     */
+    private record Growth(int level, List<UUID> residents) {
+        static final com.mojang.serialization.MapCodec<Growth> MAP_CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
+                Codec.INT.optionalFieldOf("level", 1).forGetter(Growth::level),
+                UUIDUtil.CODEC.listOf().optionalFieldOf("residents", List.of()).forGetter(Growth::residents)
+        ).apply(instance, Growth::new));
+    }
 
     /**
      * Preferences the leader can change.
@@ -86,6 +100,8 @@ public final class Kingdom {
     private Settings settings = Settings.DEFAULT;
     private MapId map;
     private final Set<ChunkClaim> claims = new LinkedHashSet<>();
+    private int level = 1;
+    private final Set<UUID> residents = new LinkedHashSet<>();
 
     Kingdom(UUID id, String name, DyeColor color, UUID founder, UUID leader, Set<UUID> members, GlobalPos townHall) {
         this.id = id;
@@ -167,6 +183,21 @@ public final class Kingdom {
         return this.claims.contains(chunk);
     }
 
+    /** The kingdom's level, from 1 to {@link KingdomLevel#MAX_LEVEL}. */
+    public int level() {
+        return this.level;
+    }
+
+    /** What the kingdom's level allows: villager and land caps. */
+    public KingdomLevel levelInfo() {
+        return KingdomLevel.of(this.level);
+    }
+
+    /** The villagers who have moved in, by entity UUID. They leave the list when they die. */
+    public Set<UUID> residents() {
+        return Collections.unmodifiableSet(this.residents);
+    }
+
     public boolean isInvited(UUID player) {
         return this.invites.contains(player);
     }
@@ -229,6 +260,14 @@ public final class Kingdom {
 
     Set<ChunkClaim> mutableClaims() {
         return this.claims;
+    }
+
+    void setLevel(int level) {
+        this.level = Math.clamp(level, 1, KingdomLevel.MAX_LEVEL);
+    }
+
+    Set<UUID> mutableResidents() {
+        return this.residents;
     }
 
     void clearTownHall() {

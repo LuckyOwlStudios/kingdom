@@ -43,7 +43,14 @@ public final class KingdomScreens {
                 map.map(data -> data.centerX).orElse(hall.getX()), map.map(data -> data.centerZ).orElse(hall.getZ()),
                 claims, kingdom.claims().size(),
                 kingdom.settings().inviteOnly(), kingdom.settings().friendlyFire(),
-                kingdom.rank(viewer.getUUID()), members);
+                kingdom.rank(viewer.getUUID()), members, growth(kingdom));
+    }
+
+    private static KingdomViewPayload.Growth growth(Kingdom kingdom) {
+        KingdomLevel level = kingdom.levelInfo();
+        int cost = level.isMax() ? 0 : KingdomLevel.of(level.level() + 1).cost();
+        return new KingdomViewPayload.Growth(level.level(), KingdomLevel.MAX_LEVEL, kingdom.residents().size(),
+                level.villagerCap(), level.landCap(), cost);
     }
 
     /** Opens (or refreshes) the Town Hall screen for a member. */
@@ -103,6 +110,7 @@ public final class KingdomScreens {
                     new Kingdom.Settings(action.value() != 0, kingdom.settings().friendlyFire()));
             case SET_FRIENDLY_FIRE -> Kingdoms.setSettings(player,
                     new Kingdom.Settings(kingdom.settings().inviteOnly(), action.value() != 0));
+            case LEVEL_UP -> Kingdoms.levelUp(player);
             case LEAVE -> {
                 Kingdoms.leave(player);
                 return;

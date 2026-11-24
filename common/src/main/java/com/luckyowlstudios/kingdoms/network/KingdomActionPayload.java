@@ -22,7 +22,7 @@ public record KingdomActionPayload(Action action, Optional<UUID> target, String 
     public static final Type<KingdomActionPayload> TYPE = new Type<>(Constants.id("kingdom_action"));
 
     public enum Action {
-        PROMOTE, DEMOTE, KICK, BAN, UNBAN, INVITE, SET_COLOR, SET_BANNER, SET_INVITE_ONLY, SET_FRIENDLY_FIRE, LEAVE
+        PROMOTE, DEMOTE, KICK, BAN, UNBAN, INVITE, SET_COLOR, SET_BANNER, SET_INVITE_ONLY, SET_FRIENDLY_FIRE, LEAVE, LEVEL_UP
     }
 
     public static final StreamCodec<RegistryFriendlyByteBuf, KingdomActionPayload> STREAM_CODEC = StreamCodec.composite(

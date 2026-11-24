@@ -3,6 +3,7 @@ package com.luckyowlstudios.kingdoms;
 import com.luckyowlstudios.kingdoms.entity.GuideEntity;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomCommand;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomScreens;
+import com.luckyowlstudios.kingdoms.kingdom.KingdomVillagers;
 import com.luckyowlstudios.kingdoms.kingdom.Kingdoms;
 import com.luckyowlstudios.kingdoms.network.CreateKingdomPayload;
 import com.luckyowlstudios.kingdoms.network.KingdomActionPayload;
@@ -12,6 +13,7 @@ import com.luckyowlstudios.kingdoms.registry.ModEntities;
 import com.luckyowlstudios.kingdoms.registry.ModItems;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -32,6 +34,7 @@ public class KingdomsFabric implements ModInitializer {
                 .register(entries -> entries.accept(ModItems.GUIDE_SPAWN_EGG.get()));
 
         CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> KingdomCommand.register(dispatcher));
+        ServerTickEvents.END_SERVER_TICK.register(KingdomVillagers::tick);
         registerNetworking();
     }
 

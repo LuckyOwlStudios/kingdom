@@ -194,20 +194,32 @@ public class KingdomScreen extends Screen {
     /** Name, colour, banner, leader, and the kingdom map. */
     private final class OverviewTab extends KingdomTab {
 
+        private final Button levelUp;
         private final Button leave;
 
         OverviewTab() {
             super("kingdoms.kingdom.screen.overview");
+            KingdomViewPayload.Growth growth = KingdomScreen.this.view.growth();
+            this.levelUp = this.add(Button.builder(Component.translatable("kingdoms.kingdom.screen.level_up"),
+                    button -> KingdomScreen.this.send(KingdomActionPayload.of(Action.LEVEL_UP))).size(78, 20).build());
+            this.levelUp.active = KingdomScreen.this.isLeader() && !growth.isMax();
+            this.levelUp.setTooltip(Tooltip.create(growth.isMax()
+                    ? Component.translatable("kingdoms.kingdom.screen.level_up.max")
+                    : KingdomScreen.this.isLeader()
+                    ? Component.translatable("kingdoms.kingdom.screen.level_up.cost", growth.levelUpCost(), growth.level() + 1)
+                    : Component.translatable("kingdoms.kingdom.screen.leader_only")));
             this.leave = this.add(Button.builder(Component.translatable("kingdoms.kingdom.screen.leave"),
                     button -> {
                         KingdomScreen.this.send(KingdomActionPayload.of(Action.LEAVE));
                         KingdomScreen.this.onClose();
-                    }).size(120, 20).build());
+                    }).size(78, 20).build());
         }
 
         @Override
         protected void layout(int centerX, int top) {
-            this.leave.setPosition(centerX - 10 - 120 - 4, top + 120);
+            int left = centerX - 10 - 160;
+            this.levelUp.setPosition(left, top + 120);
+            this.leave.setPosition(left + 82, top + 120);
         }
 
         @Override
@@ -243,10 +255,13 @@ public class KingdomScreen extends Screen {
             graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.member_count", count), textLeft, top + 40, 0xA0A0A0);
             graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.your_rank",
                     Component.translatable(KingdomScreen.this.view.viewerRank().translationKey())), left, top + 62, 0xA0A0A0);
-            int claimCount = KingdomScreen.this.view.claimCount();
-            graphics.drawString(KingdomScreen.this.font, claimCount == 1
-                    ? Component.translatable("kingdoms.kingdom.screen.claimed_chunks.one")
-                    : Component.translatable("kingdoms.kingdom.screen.claimed_chunks", claimCount), left, top + 74, 0xA0A0A0);
+            KingdomViewPayload.Growth growth = KingdomScreen.this.view.growth();
+            graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.level",
+                    growth.level(), growth.maxLevel()), left, top + 78, 0xFFD700);
+            graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.villagers",
+                    growth.villagers(), growth.villagerCap()), left, top + 90, 0xA0A0A0);
+            graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.land",
+                    KingdomScreen.this.view.claimCount(), growth.landCap()), left, top + 102, 0xA0A0A0);
 
             // The kingdom map, on vanilla's map background.
             int mapLeft = centerX + 10;
