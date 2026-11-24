@@ -242,15 +242,21 @@ public class KingdomScreen extends Screen {
         }
     }
 
-    /** Name, colour, banner, leader, and the kingdom map. */
+    /**
+     * The kingdom at a glance. From the top: its name, its level with an XP bar, then two columns: on the left the
+     * banner and who's who, the kingdom's numbers and the Leave button; on the right the kingdom map.
+     */
     private final class OverviewTab extends KingdomTab {
 
-        /** Room at the top of the tab for the level bar; everything else sits below it. */
-        private static final int BAR_SPACE = 24;
+        /** Room at the top for the name and the level bar; the columns start below it. */
+        private static final int HEADER = 40;
+        private static final int COLUMN_WIDTH = 160;
+        private static final int GAP = 20;
         private static final ResourceLocation XP_BAR_BACKGROUND = ResourceLocation.withDefaultNamespace("hud/experience_bar_background");
         private static final ResourceLocation XP_BAR_PROGRESS = ResourceLocation.withDefaultNamespace("hud/experience_bar_progress");
         private static final int XP_BAR_WIDTH = 182;
         private static final int XP_BAR_HEIGHT = 5;
+        private static final int LABEL = 0xA0A0A0;
 
         private final Button leave;
 
@@ -260,31 +266,45 @@ public class KingdomScreen extends Screen {
                     button -> {
                         KingdomScreen.this.send(KingdomActionPayload.of(Action.LEAVE));
                         KingdomScreen.this.onClose();
-                    }).size(120, 20).build());
+                    }).size(COLUMN_WIDTH, 20).build());
         }
 
+        /** The top of the two columns. */
         @Override
         protected int top() {
-            return super.top() + BAR_SPACE;
+            return super.top() + HEADER;
         }
 
         @Override
         protected void layout(int centerX, int top) {
-            this.leave.setPosition(centerX - 10 - 160, top + BAR_SPACE + 120);
+            // Level with the bottom of the map.
+            this.leave.setPosition(this.left(), top + HEADER + MAP_SIZE - 20);
+        }
+
+        /** Left edge of the info column. The two columns together are centred in the tab. */
+        int left() {
+            return this.centerX() - (COLUMN_WIDTH + GAP + MAP_SIZE) / 2;
+        }
+
+        /** The kingdom's name, large and in its colour, centred at the top. */
+        private void renderName(GuiGraphics graphics) {
+            PoseStack pose = graphics.pose();
+            pose.pushPose();
+            pose.translate(this.centerX(), super.top(), 0);
+            pose.scale(1.5F, 1.5F, 1.0F);
+            graphics.drawCenteredString(KingdomScreen.this.font, KingdomScreen.this.coloredName(), 0, 0, 0xFFFFFF);
+            pose.popPose();
         }
 
         /**
-         * The kingdom's level and its XP toward the next one, drawn with vanilla's experience bar, centred over the
-         * tab's contents (the info column and the map).
+         * The level, and vanilla's experience bar filled with the XP toward the next one. Hovering shows the numbers.
          */
         private void renderLevelBar(GuiGraphics graphics, int mouseX, int mouseY) {
             KingdomViewPayload.Growth growth = KingdomScreen.this.view.growth();
-            int center = (this.centerX() - 10 - 160 + this.mapLeft() + MAP_SIZE) / 2;
-            int labelTop = super.top() - 2;
-            Component label = growth.isMax()
-                    ? Component.translatable("kingdoms.kingdom.screen.level_bar.max", growth.level())
-                    : Component.translatable("kingdoms.kingdom.screen.level_bar", growth.level(), growth.xp(), growth.xpToNext());
-            graphics.drawCenteredString(KingdomScreen.this.font, label, center, labelTop, 0x80FF20);
+            int center = this.centerX();
+            int labelTop = super.top() + 17;
+            graphics.drawCenteredString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.level",
+                    growth.level()), center, labelTop, 0x80FF20);
             int barLeft = center - XP_BAR_WIDTH / 2;
             int barTop = labelTop + 11;
             graphics.blitSprite(XP_BAR_BACKGROUND, barLeft, barTop, XP_BAR_WIDTH, XP_BAR_HEIGHT);
@@ -293,21 +313,29 @@ public class KingdomScreen extends Screen {
             if (filled > 0) {
                 graphics.blitSprite(XP_BAR_PROGRESS, XP_BAR_WIDTH, XP_BAR_HEIGHT, 0, 0, barLeft, barTop, filled, XP_BAR_HEIGHT);
             }
-            if (mouseX >= barLeft && mouseX < barLeft + XP_BAR_WIDTH && mouseY >= labelTop && mouseY < barTop + XP_BAR_HEIGHT) {
-                graphics.renderTooltip(KingdomScreen.this.font, KingdomScreen.this.font.split(
-                        Component.translatable("kingdoms.kingdom.screen.level_bar.tooltip"), 200), mouseX, mouseY);
+            if (mouseX >= barLeft && mouseX < barLeft + XP_BAR_WIDTH && mouseY >= labelTop && mouseY < barTop + XP_BAR_HEIGHT + 2) {
+                List<Component> lines = new ArrayList<>();
+                lines.add(growth.isMax()
+                        ? Component.translatable("kingdoms.kingdom.screen.level_bar.max")
+                        : Component.translatable("kingdoms.kingdom.screen.level_bar", growth.xp(), growth.xpToNext(), growth.level() + 1));
+                lines.add(Component.translatable("kingdoms.kingdom.screen.level_bar.tooltip").withStyle(net.minecraft.ChatFormatting.GRAY));
+                List<net.minecraft.util.FormattedCharSequence> wrapped = new ArrayList<>();
+                lines.forEach(line -> wrapped.addAll(KingdomScreen.this.font.split(line, 200)));
+                graphics.renderTooltip(KingdomScreen.this.font, wrapped, mouseX, mouseY);
             }
         }
 
         @Override
         void renderExtras(GuiGraphics graphics, int mouseX, int mouseY) {
-            int centerX = this.centerX();
+            KingdomViewPayload view = KingdomScreen.this.view;
+            KingdomViewPayload.Growth growth = view.growth();
             int top = this.top();
-            int left = centerX - 10 - 160;
+            int left = this.left();
+            this.renderName(graphics);
             this.renderLevelBar(graphics, mouseX, mouseY);
 
             // Banner, drawn as a big item like vanilla's loom preview.
-            ItemStack banner = KingdomScreen.this.view.banner();
+            ItemStack banner = view.banner();
             graphics.fill(left, top, left + 52, top + 52, 0xFF000000);
             graphics.fill(left + 1, top + 1, left + 51, top + 51, 0xFF8B8B8B);
             if (!banner.isEmpty()) {
@@ -319,30 +347,33 @@ public class KingdomScreen extends Screen {
                 pose.popPose();
             } else {
                 graphics.drawCenteredString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.no_banner"),
-                        left + 26, top + 22, 0xA0A0A0);
+                        left + 26, top + 22, LABEL);
             }
 
+            // Who's who, beside the banner.
             int textLeft = left + 60;
-            graphics.drawString(KingdomScreen.this.font, KingdomScreen.this.coloredName(), textLeft, top + 2, 0xFFFFFF);
-            graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.color",
-                    ColorSwatchButton.name(KingdomScreen.this.view.color())), textLeft, top + 16, 0xA0A0A0);
-            String leader = KingdomScreen.this.view.members().stream().filter(m -> m.rank() == KingdomRank.LEADER)
+            String leader = view.members().stream().filter(m -> m.rank() == KingdomRank.LEADER)
                     .map(KingdomViewPayload.Member::name).findFirst().orElse("?");
-            graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.info.leader", leader), textLeft, top + 28, 0xA0A0A0);
-            long count = KingdomScreen.this.view.members().stream().filter(m -> !m.banned()).count();
-            graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.member_count", count), textLeft, top + 40, 0xA0A0A0);
+            long count = view.members().stream().filter(m -> !m.banned()).count();
+            graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.info.leader", leader), textLeft, top + 2, LABEL);
+            graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.member_count", count), textLeft, top + 14, LABEL);
             graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.your_rank",
-                    Component.translatable(KingdomScreen.this.view.viewerRank().translationKey())), left, top + 62, 0xA0A0A0);
-            KingdomViewPayload.Growth growth = KingdomScreen.this.view.growth();
+                    Component.translatable(view.viewerRank().translationKey())), textLeft, top + 26, LABEL);
+            graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.color",
+                    ColorSwatchButton.name(view.color())), textLeft, top + 38, LABEL);
+
+            // The kingdom's numbers, under the banner.
+            graphics.fill(left, top + 60, left + COLUMN_WIDTH, top + 61, 0x40FFFFFF);
             graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.villagers",
-                    growth.villagers(), growth.villagerCap()), left, top + 78, 0xA0A0A0);
+                    growth.villagers(), growth.villagerCap()), left, top + 68, LABEL);
             graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.land",
-                    KingdomScreen.this.view.claimCount(), growth.landCap()), left, top + 90, 0xA0A0A0);
+                    view.claimCount(), growth.landCap()), left, top + 80, LABEL);
+            graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.map_scale",
+                    view.mapRadius(), KingdomMaps.MAX_RADIUS), left, top + 92, LABEL);
 
             // The kingdom map, on vanilla's map background. Clicking it opens the full map screen.
             // It shows the middle map, around the Town Hall, at full size; the rest is on the full map screen.
             int mapLeft = this.mapLeft();
-            KingdomViewPayload view = KingdomScreen.this.view;
             KingdomMapRenderer.drawPaper(graphics, mapLeft, top, MAP_SIZE, 1.0F);
             int gridLeft = mapLeft - view.mapRadius() * MAP_SIZE;
             int gridTop = top - view.mapRadius() * MAP_SIZE;
@@ -358,8 +389,6 @@ public class KingdomScreen extends Screen {
                     overHall |= Math.abs(mouseX - x) <= 5 && Math.abs(mouseY - y) <= 5;
                 }
             }
-            graphics.drawCenteredString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.map_scale",
-                    view.mapRadius(), KingdomMaps.MAX_RADIUS), mapLeft + MAP_SIZE / 2, top + MAP_SIZE + 10, 0xA0A0A0);
             if (overHall) {
                 graphics.renderTooltip(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.town_hall_of",
                         KingdomScreen.this.coloredName()), mouseX, mouseY);
@@ -371,7 +400,7 @@ public class KingdomScreen extends Screen {
         }
 
         int mapLeft() {
-            return this.centerX() + 10;
+            return this.left() + COLUMN_WIDTH + GAP;
         }
 
         boolean isOverMap(double mouseX, double mouseY) {
