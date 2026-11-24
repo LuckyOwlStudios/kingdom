@@ -21,7 +21,8 @@
     ],
     "fabric-gametest": [
       "com.luckyowlstudios.kingdoms.test.KingdomsGameTests",
-      "com.luckyowlstudios.kingdoms.test.DiplomacyGameTests"
+      "com.luckyowlstudios.kingdoms.test.DiplomacyGameTests",
+      "com.luckyowlstudios.kingdoms.test.WatchtowerGameTests"
     ]
   },
   "mixins": [

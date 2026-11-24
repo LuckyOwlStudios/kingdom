@@ -10,6 +10,7 @@
     "ExplosionMixin",
     "MapItemSavedDataAccessor",
     "NaturalSpawnerMixin",
+    "PatrollingMonsterAccessor",
     "PlayerMixin",
     "ServerPlayerGameModeMixin",
     "ServerPlayerMixin",
