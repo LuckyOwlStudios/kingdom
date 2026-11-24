@@ -8,6 +8,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
@@ -37,9 +38,12 @@ public final class KingdomMapRenderer {
      *
      * @param mapX  where it is, in map pixels from the map's left edge
      * @param mapY  the same, from the top edge
-     * @param name  shown when hovered, and in the info panel when selected
+     * @param name    shown when hovered, and at the top of the info panel when selected
+     * @param details more lines for the info panel
+     * @param picture an item drawn big in the info panel, or empty for none
      */
-    public record Icon(ResourceLocation texture, float mapX, float mapY, Component name) {
+    public record Icon(ResourceLocation texture, float mapX, float mapY, Component name, List<Component> details,
+                       ItemStack picture) {
     }
 
     private KingdomMapRenderer() {
@@ -77,7 +81,8 @@ public final class KingdomMapRenderer {
     public static List<Icon> icons(KingdomViewPayload view) {
         float x = toMapX(view, view.townHall().getX() + 0.5);
         float y = toMapY(view, view.townHall().getZ() + 0.5);
-        return List.of(new Icon(TOWN_HALL_ICON, x, y, coloredName(view)));
+        List<Component> details = List.of(Component.translatable("kingdoms.kingdom.map.panel.level", view.growth().level()));
+        return List.of(new Icon(TOWN_HALL_ICON, x, y, coloredName(view), details, view.banner()));
     }
 
     /** Vanilla's map paper, sized to the whole grid, with the grid's top-left corner at x, y. */
@@ -95,6 +100,11 @@ public final class KingdomMapRenderer {
      * Callers clip it to what they want to show.
      */
     public static void drawMap(GuiGraphics graphics, KingdomViewPayload view, float x, float y, float zoom) {
+        drawMap(graphics, view, x, y, zoom, true);
+    }
+
+    /** The same, with the kingdom's land shaded only if {@code showLand} is set. */
+    public static void drawMap(GuiGraphics graphics, KingdomViewPayload view, float x, float y, float zoom, boolean showLand) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.level == null) {
             return;
@@ -113,7 +123,9 @@ public final class KingdomMapRenderer {
             pose.popPose();
         }
         graphics.flush();
-        drawClaims(graphics, view, x, y, zoom);
+        if (showLand) {
+            drawClaims(graphics, view, x, y, zoom);
+        }
     }
 
     /**
