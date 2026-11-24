@@ -106,6 +106,7 @@ public final class KingdomData extends SavedData {
         members.add(founder);
         Kingdom kingdom = new Kingdom(UUID.randomUUID(), name, color, founder, founder, members, townHall);
         this.kingdoms.put(kingdom.id(), kingdom);
+        kingdom.vault().addListener(container -> this.setDirty());
         this.kingdoms.values().forEach(other -> other.mutableInvites().remove(founder));
         this.claim(kingdom, ChunkClaim.of(townHall));
         this.claimLand(kingdom);
@@ -245,7 +246,7 @@ public final class KingdomData extends SavedData {
             return;
         }
         ChunkClaim center = ChunkClaim.of(kingdom.townHall().get());
-        int radius = kingdom.levelInfo().claimRadius();
+        int radius = kingdom.claimRadius();
         for (ChunkClaim chunk : java.util.List.copyOf(kingdom.mutableClaims())) {
             if (!chunk.dimension().equals(center.dimension())
                     || Math.max(Math.abs(chunk.x() - center.x()), Math.abs(chunk.z() - center.z())) > radius) {
@@ -293,6 +294,9 @@ public final class KingdomData extends SavedData {
 
     void setPerkTier(Kingdom kingdom, KingdomPerk perk, int tier) {
         kingdom.setPerkTier(perk.id(), tier);
+        if (perk == KingdomPerks.EXPANSION) {
+            this.claimLand(kingdom);
+        }
         this.setDirty();
     }
 
@@ -340,7 +344,10 @@ public final class KingdomData extends SavedData {
         if (tag.contains("kingdoms")) {
             LIST_CODEC.parse(registries.createSerializationContext(NbtOps.INSTANCE), tag.get("kingdoms"))
                     .resultOrPartial(error -> Constants.LOG.error("Couldn't load kingdoms: {}", error))
-                    .ifPresent(list -> list.forEach(kingdom -> data.kingdoms.put(kingdom.id(), kingdom)));
+                    .ifPresent(list -> list.forEach(kingdom -> {
+                        data.kingdoms.put(kingdom.id(), kingdom);
+                        kingdom.vault().addListener(container -> data.setDirty());
+                    }));
         }
         for (Kingdom kingdom : data.kingdoms.values()) {
             // Kingdoms founded before chunk claims existed get their Town Hall's chunk now.

@@ -48,7 +48,7 @@ public final class KingdomScreens {
     private static KingdomViewPayload.Growth growth(net.minecraft.server.MinecraftServer server, Kingdom kingdom) {
         KingdomLevel level = kingdom.levelInfo();
         return new KingdomViewPayload.Growth(level.level(), KingdomLevel.MAX_LEVEL, kingdom.residents().size(),
-                level.villagerCap(), level.landCap(), kingdom.xp(), level.xpToNext(), KingdomPerks.availablePoints(kingdom), Map.copyOf(kingdom.perks()),
+                level.villagerCap(), kingdom.landCap(), kingdom.xp(), level.xpToNext(), KingdomPerks.availablePoints(kingdom), Map.copyOf(kingdom.perks()),
                 kingdom.taxes(), TaxCollector.treasuryCap(server, kingdom));
     }
 
@@ -114,6 +114,16 @@ public final class KingdomScreens {
                     new Kingdom.Settings(kingdom.settings().inviteOnly(), action.value() != 0));
             case UNLOCK_PERK -> KingdomPerks.upgrade(player, action.text());
             case COLLECT_TAXES -> TaxCollector.collect(player);
+            case OPEN_VAULT -> {
+                // The vault's menu replaces the Town Hall screen, so there's nothing to refresh.
+                SharedVault.open(player);
+                return;
+            }
+            case GO_HOME -> {
+                // The screen closes itself when the button is pressed.
+                Homecoming.goHome(player);
+                return;
+            }
             case LEAVE -> {
                 Kingdoms.leave(player);
                 return;

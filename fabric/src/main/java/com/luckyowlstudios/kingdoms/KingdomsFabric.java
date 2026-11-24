@@ -47,6 +47,8 @@ public class KingdomsFabric implements ModInitializer {
         PayloadTypeRegistry.playS2C().register(OpenCreateKingdomPayload.TYPE, OpenCreateKingdomPayload.STREAM_CODEC);
         PayloadTypeRegistry.playC2S().register(CreateKingdomPayload.TYPE, CreateKingdomPayload.STREAM_CODEC);
         PayloadTypeRegistry.playS2C().register(KingdomViewPayload.TYPE, KingdomViewPayload.STREAM_CODEC);
+        PayloadTypeRegistry.playS2C().register(com.luckyowlstudios.kingdoms.network.PerkUnlockedPayload.TYPE,
+                com.luckyowlstudios.kingdoms.network.PerkUnlockedPayload.STREAM_CODEC);
         PayloadTypeRegistry.playC2S().register(KingdomActionPayload.TYPE, KingdomActionPayload.STREAM_CODEC);
         PayloadTypeRegistry.playC2S().register(CloseTownHallPayload.TYPE, CloseTownHallPayload.STREAM_CODEC);
         ServerPlayNetworking.registerGlobalReceiver(KingdomActionPayload.TYPE,

@@ -373,7 +373,7 @@ public final class Kingdoms {
         }
         KingdomLevel info = kingdom.levelInfo();
         broadcast(server, kingdom, Component.translatable("kingdoms.kingdom.level.reached", kingdom.displayName(),
-                info.level(), info.villagerCap(), info.landCap()));
+                info.level(), info.villagerCap(), kingdom.landCap()));
         if (kingdom.level() > before) {
             KingdomCelebration.start(kingdom);
         }
