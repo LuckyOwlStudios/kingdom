@@ -10,7 +10,6 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
-import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.ObjectSelectionList;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.components.tabs.Tab;
@@ -65,6 +64,10 @@ public class KingdomScreen extends Screen {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.screen instanceof KingdomScreen screen) {
             screen.update(view);
+        } else if (minecraft.screen instanceof InvitePlayersScreen invite) {
+            // An invite was sent from the player list: keep it open, and refresh the Town Hall behind it.
+            invite.parent().view = view;
+            invite.update(view);
         } else {
             minecraft.setScreen(new KingdomScreen(view));
         }
@@ -311,7 +314,7 @@ public class KingdomScreen extends Screen {
         graphics.disableScissor();
     }
 
-    /** Everyone in the kingdom, and the ban list, with rank buttons and an invite box. */
+    /** Everyone in the kingdom, and the ban list, with rank buttons and a button to invite online players. */
     private final class MembersTab extends KingdomTab {
 
         private final MemberList list;
@@ -320,7 +323,6 @@ public class KingdomScreen extends Screen {
         private final Button kick;
         private final Button ban;
         private final Button unban;
-        private final EditBox inviteName;
         private final Button invite;
 
         MembersTab() {
@@ -331,15 +333,9 @@ public class KingdomScreen extends Screen {
             this.kick = this.add(this.memberButton("kingdoms.kingdom.screen.kick", Action.KICK));
             this.ban = this.add(this.memberButton("kingdoms.kingdom.screen.ban", Action.BAN));
             this.unban = this.add(this.memberButton("kingdoms.kingdom.screen.unban", Action.UNBAN));
-            this.inviteName = this.add(new EditBox(KingdomScreen.this.font, 0, 0, 120, 20, Component.translatable("kingdoms.kingdom.screen.invite_name")));
-            this.inviteName.setHint(Component.translatable("kingdoms.kingdom.screen.invite_name"));
-            this.inviteName.setMaxLength(16);
-            this.invite = this.add(Button.builder(Component.translatable("kingdoms.kingdom.screen.invite"), button -> {
-                if (!this.inviteName.getValue().isBlank()) {
-                    KingdomScreen.this.send(new KingdomActionPayload(Action.INVITE, java.util.Optional.empty(), this.inviteName.getValue().strip(), 0));
-                    this.inviteName.setValue("");
-                }
-            }).size(76, 20).build());
+            this.invite = this.add(Button.builder(Component.translatable("kingdoms.kingdom.screen.invite_players"),
+                    button -> Minecraft.getInstance().setScreen(new InvitePlayersScreen(KingdomScreen.this, KingdomScreen.this.view)))
+                    .size(220, 20).build());
             this.updateButtons();
         }
 
@@ -362,8 +358,7 @@ public class KingdomScreen extends Screen {
             for (int i = 0; i < buttons.length; i++) {
                 buttons[i].setPosition(buttonLeft, top + i * 24);
             }
-            this.inviteName.setPosition(listLeft, top + listHeight + 6);
-            this.invite.setPosition(listLeft + 124, top + listHeight + 6);
+            this.invite.setPosition(listLeft, top + listHeight + 6);
         }
 
         void updateButtons() {
@@ -380,7 +375,8 @@ public class KingdomScreen extends Screen {
             this.ban.active = KingdomScreen.this.isOfficer() && outranked;
             this.unban.active = KingdomScreen.this.isOfficer() && member != null && member.banned();
             this.invite.active = KingdomScreen.this.isOfficer();
-            this.inviteName.setEditable(KingdomScreen.this.isOfficer());
+            this.invite.setTooltip(KingdomScreen.this.isOfficer() ? null
+                    : Tooltip.create(Component.translatable("kingdoms.kingdom.screen.invite_players.officer_only")));
         }
 
         private final class MemberList extends ObjectSelectionList<MemberList.Entry> {
