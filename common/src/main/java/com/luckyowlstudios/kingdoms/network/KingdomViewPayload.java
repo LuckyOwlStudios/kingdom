@@ -27,11 +27,12 @@ import java.util.UUID;
  * @param mapCenterX the block the kingdom map is centred on (clients don't get this with the map itself)
  * @param claims     the kingdom's claimed chunks in the map's dimension, to draw on the map
  * @param claimCount how many chunks the kingdom holds in every dimension
+ * @param growth     the kingdom's level and what it allows
  */
 public record KingdomViewPayload(BlockPos townHall, String name, DyeColor color, ItemStack banner,
                                  Optional<MapId> map, int mapScale, int mapCenterX, int mapCenterZ,
                                  List<ChunkPos> claims, int claimCount, boolean inviteOnly, boolean friendlyFire,
-                                 KingdomRank viewerRank, List<Member> members) implements CustomPacketPayload {
+                                 KingdomRank viewerRank, List<Member> members, Growth growth) implements CustomPacketPayload {
 
     public static final Type<KingdomViewPayload> TYPE = new Type<>(Constants.id("kingdom_view"));
 
@@ -42,6 +43,27 @@ public record KingdomViewPayload(BlockPos townHall, String name, DyeColor color,
                 ByteBufCodecs.VAR_INT.map(i -> KingdomRank.values()[i], KingdomRank::ordinal), Member::rank,
                 ByteBufCodecs.BOOL, Member::banned,
                 Member::new);
+    }
+
+    /**
+     * @param villagers    villagers living in the kingdom
+     * @param villagerCap  how many the level allows
+     * @param landCap      how many chunks the level allows
+     * @param levelUpCost  emeralds needed for the next level, or 0 at the top level
+     */
+    public record Growth(int level, int maxLevel, int villagers, int villagerCap, int landCap, int levelUpCost) {
+        static final StreamCodec<RegistryFriendlyByteBuf, Growth> STREAM_CODEC = StreamCodec.composite(
+                ByteBufCodecs.VAR_INT, Growth::level,
+                ByteBufCodecs.VAR_INT, Growth::maxLevel,
+                ByteBufCodecs.VAR_INT, Growth::villagers,
+                ByteBufCodecs.VAR_INT, Growth::villagerCap,
+                ByteBufCodecs.VAR_INT, Growth::landCap,
+                ByteBufCodecs.VAR_INT, Growth::levelUpCost,
+                Growth::new);
+
+        public boolean isMax() {
+            return this.level >= this.maxLevel;
+        }
     }
 
     public static final StreamCodec<RegistryFriendlyByteBuf, KingdomViewPayload> STREAM_CODEC = StreamCodec.of(
@@ -62,6 +84,7 @@ public record KingdomViewPayload(BlockPos townHall, String name, DyeColor color,
                 buf.writeVarInt(view.viewerRank.ordinal());
                 buf.writeVarInt(view.members.size());
                 view.members.forEach(member -> Member.STREAM_CODEC.encode(buf, member));
+                Growth.STREAM_CODEC.encode(buf, view.growth);
             },
             buf -> {
                 BlockPos townHall = BlockPos.STREAM_CODEC.decode(buf);
@@ -86,8 +109,9 @@ public record KingdomViewPayload(BlockPos townHall, String name, DyeColor color,
                 for (int i = 0; i < count; i++) {
                     members.add(Member.STREAM_CODEC.decode(buf));
                 }
+                Growth growth = Growth.STREAM_CODEC.decode(buf);
                 return new KingdomViewPayload(townHall, name, color, banner, map, mapScale, mapCenterX, mapCenterZ,
-                        claims, claimCount, inviteOnly, friendlyFire, viewerRank, members);
+                        claims, claimCount, inviteOnly, friendlyFire, viewerRank, members, growth);
             });
 
     @Override

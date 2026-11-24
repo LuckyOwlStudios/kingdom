@@ -6,6 +6,7 @@ import com.luckyowlstudios.kingdoms.entity.GuideEntity;
 import com.luckyowlstudios.kingdoms.kingdom.Diplomacy;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomCommand;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomScreens;
+import com.luckyowlstudios.kingdoms.kingdom.KingdomVillagers;
 import com.luckyowlstudios.kingdoms.kingdom.Kingdoms;
 import com.luckyowlstudios.kingdoms.network.CloseTownHallPayload;
 import com.luckyowlstudios.kingdoms.network.CreateKingdomPayload;
@@ -25,6 +26,7 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
@@ -39,6 +41,7 @@ public class KingdomsNeoForge {
         eventBus.addListener(KingdomsNeoForge::onBuildCreativeTabs);
         eventBus.addListener(KingdomsNeoForge::registerPayloads);
         NeoForge.EVENT_BUS.addListener(KingdomsNeoForge::registerCommands);
+        NeoForge.EVENT_BUS.addListener((ServerTickEvent.Post event) -> KingdomVillagers.tick(event.getServer()));
     }
 
     private static void onEntityAttributes(EntityAttributeCreationEvent event) {

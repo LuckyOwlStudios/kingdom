@@ -36,6 +36,8 @@ public final class KingdomData extends SavedData {
     private final Map<UUID, Kingdom> kingdoms = new LinkedHashMap<>();
     /** Who owns each claimed chunk, for quick lookups. Rebuilt from the kingdoms on load. */
     private final Map<ChunkClaim, UUID> claimOwners = new HashMap<>();
+    /** The overworld day the last morning was handled on, so villagers move in once a day. -1 until the first check. */
+    private long lastDay = -1;
 
     public static KingdomData get(MinecraftServer server) {
         return server.overworld().getDataStorage().computeIfAbsent(FACTORY, FILE_NAME);
@@ -106,6 +108,7 @@ public final class KingdomData extends SavedData {
         this.kingdoms.put(kingdom.id(), kingdom);
         this.kingdoms.values().forEach(other -> other.mutableInvites().remove(founder));
         this.claim(kingdom, ChunkClaim.of(townHall));
+        this.claimLand(kingdom);
         this.setDirty();
         KingdomTeams.sync(server, kingdom);
         TownHallBlockEntity.refresh(server, townHall);
@@ -210,17 +213,86 @@ public final class KingdomData extends SavedData {
         this.setDirty();
     }
 
-    /** Makes this the kingdom's seat and claims the chunk it stands in. The caller checks the chunk is free. */
+    /**
+     * Makes this the kingdom's seat and claims the chunk it stands in, plus the land around it that its level allows.
+     * The caller checks the hall's chunk is free.
+     */
     void setTownHall(Kingdom kingdom, GlobalPos pos) {
         kingdom.setTownHall(pos);
         this.claim(kingdom, ChunkClaim.of(pos));
+        this.claimLand(kingdom);
         this.setDirty();
     }
 
-    /** The kingdom's Town Hall was broken: it keeps going, but needs a new one, and loses the hall's chunk. */
+    /**
+     * The kingdom's Town Hall was broken: it keeps going, but needs a new one. Its land is laid out around the hall,
+     * so all of it is given up.
+     */
     void clearTownHall(Kingdom kingdom) {
-        kingdom.townHall().ifPresent(hall -> this.unclaim(kingdom, ChunkClaim.of(hall)));
+        for (ChunkClaim chunk : java.util.List.copyOf(kingdom.mutableClaims())) {
+            this.unclaim(kingdom, chunk);
+        }
         kingdom.clearTownHall();
+        this.setDirty();
+    }
+
+    /**
+     * Fits the kingdom's land to its level: claims every free chunk within the level's radius of the Town Hall's
+     * chunk, and lets go of any beyond it (or in another dimension). Chunks another kingdom holds are skipped.
+     */
+    void claimLand(Kingdom kingdom) {
+        if (kingdom.townHall().isEmpty()) {
+            return;
+        }
+        ChunkClaim center = ChunkClaim.of(kingdom.townHall().get());
+        int radius = kingdom.levelInfo().claimRadius();
+        for (ChunkClaim chunk : java.util.List.copyOf(kingdom.mutableClaims())) {
+            if (!chunk.dimension().equals(center.dimension())
+                    || Math.max(Math.abs(chunk.x() - center.x()), Math.abs(chunk.z() - center.z())) > radius) {
+                this.unclaim(kingdom, chunk);
+            }
+        }
+        // Nearest rings first, so claims stay in a sensible order.
+        for (int ring = 0; ring <= radius; ring++) {
+            for (int dx = -ring; dx <= ring; dx++) {
+                for (int dz = -ring; dz <= ring; dz++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) == ring) {
+                        this.claim(kingdom, new ChunkClaim(center.dimension(), center.x() + dx, center.z() + dz));
+                    }
+                }
+            }
+        }
+    }
+
+    /** Sets the kingdom's level and grows (or shrinks) its land to match. */
+    void setLevel(Kingdom kingdom, int level) {
+        kingdom.setLevel(level);
+        this.claimLand(kingdom);
+        this.setDirty();
+    }
+
+    void addResident(Kingdom kingdom, UUID villager) {
+        kingdom.mutableResidents().add(villager);
+        this.setDirty();
+    }
+
+    /** A kingdom's villager died or was turned into something else: it no longer counts. */
+    Optional<Kingdom> removeResident(UUID villager) {
+        for (Kingdom kingdom : this.kingdoms.values()) {
+            if (kingdom.mutableResidents().remove(villager)) {
+                this.setDirty();
+                return Optional.of(kingdom);
+            }
+        }
+        return Optional.empty();
+    }
+
+    long lastDay() {
+        return this.lastDay;
+    }
+
+    void setLastDay(long day) {
+        this.lastDay = day;
         this.setDirty();
     }
 
@@ -229,6 +301,7 @@ public final class KingdomData extends SavedData {
         LIST_CODEC.encodeStart(registries.createSerializationContext(NbtOps.INSTANCE), java.util.List.copyOf(this.kingdoms.values()))
                 .resultOrPartial(error -> Constants.LOG.error("Couldn't save kingdoms: {}", error))
                 .ifPresent(list -> tag.put("kingdoms", list));
+        tag.putLong("last_day", this.lastDay);
         return tag;
     }
 
@@ -247,6 +320,9 @@ public final class KingdomData extends SavedData {
                 data.claimOwners.putIfAbsent(chunk, kingdom.id());
             }
         }
+        // Fit every kingdom's land to its level, in case the level table changed since the world was saved.
+        data.kingdoms.values().forEach(data::claimLand);
+        data.lastDay = tag.contains("last_day") ? tag.getLong("last_day") : -1;
         return data;
     }
 }

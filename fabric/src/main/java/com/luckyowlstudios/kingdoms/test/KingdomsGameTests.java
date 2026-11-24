@@ -4,6 +4,8 @@ import com.luckyowlstudios.kingdoms.block.entity.TownHallBlockEntity;
 import com.luckyowlstudios.kingdoms.kingdom.ChunkClaim;
 import com.luckyowlstudios.kingdoms.kingdom.Kingdom;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomData;
+import com.luckyowlstudios.kingdoms.kingdom.KingdomLevel;
+import com.luckyowlstudios.kingdoms.kingdom.KingdomVillagers;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomMaps;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomRank;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomScreens;
@@ -41,7 +43,8 @@ public class KingdomsGameTests implements FabricGameTest {
      */
     private static BlockPos isolatedHall(GameTestHelper helper) {
         BlockPos origin = helper.absolutePos(BlockPos.ZERO);
-        int chunkX = 4096 + NEXT_HALL.getAndIncrement() * 2;
+        // Far enough apart that a kingdom at the top level never reaches another test's land.
+        int chunkX = 4096 + NEXT_HALL.getAndIncrement() * (2 * KingdomLevel.of(KingdomLevel.MAX_LEVEL).claimRadius() + 3);
         BlockPos pos = new BlockPos(chunkX * 16 + 4, origin.getY() + 2, 4096 * 16 + 4);
         helper.getLevel().setBlockAndUpdate(pos, ModBlocks.TOWN_HALL.get().defaultBlockState());
         return pos;
@@ -275,5 +278,85 @@ public class KingdomsGameTests implements FabricGameTest {
         KingdomMaps.explore(leader);
         KingdomScreens.open(leader, kingdom);
         helper.succeed();
+    }
+
+    @GameTest(template = EMPTY_STRUCTURE, timeoutTicks = 400)
+    public void levellingUpGrowsVillagersAndLand(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos hall = isolatedHall(helper);
+        ServerPlayer leader = helper.makeMockServerPlayerInLevel();
+        leader.moveTo(hall.getX() + 1.5, hall.getY(), hall.getZ() + 0.5);
+        leader.setGameMode(net.minecraft.world.level.GameType.SURVIVAL); // creative players level up for free
+        Kingdom kingdom = Kingdoms.tryCreate(leader, new CreateKingdomPayload(hall, "Levelburg " + level.getGameTime(), DyeColor.LIME)).orElseThrow();
+        helper.assertTrue(kingdom.level() == 1 && kingdom.claims().size() == KingdomLevel.of(1).landCap(),
+                "new kingdom should be level 1 with " + KingdomLevel.of(1).landCap() + " chunks, got level " + kingdom.level() + ", " + kingdom.claims().size());
+
+        // Not enough emeralds: nothing happens.
+        helper.assertFalse(Kingdoms.levelUp(leader), "levelled up without paying");
+        int cost = KingdomLevel.of(2).cost();
+        leader.getInventory().add(new ItemStack(KingdomLevel.CURRENCY, cost + 3));
+        helper.assertTrue(Kingdoms.levelUp(leader), "couldn't level up with " + cost + " emeralds");
+        helper.assertTrue(kingdom.level() == 2, "should be level 2");
+        helper.assertTrue(leader.getInventory().countItem(KingdomLevel.CURRENCY) == 3, "should have paid " + cost + " emeralds");
+        helper.assertTrue(kingdom.claims().size() == KingdomLevel.of(2).landCap(), "land didn't grow to " + KingdomLevel.of(2).landCap()
+                + " chunks, got " + kingdom.claims().size());
+        ChunkClaim center = ChunkClaim.of(GlobalPos.of(level.dimension(), hall));
+        ChunkClaim corner = new ChunkClaim(level.dimension(), center.x() + 1, center.z() + 1);
+        helper.assertTrue(KingdomData.get(level.getServer()).claimedBy(corner).map(owner -> owner == kingdom).orElse(false),
+                "the ring around the town hall wasn't claimed");
+        var view = KingdomScreens.view(leader, kingdom);
+        helper.assertTrue(view.growth().level() == 2 && view.growth().landCap() == KingdomLevel.of(2).landCap()
+                && view.growth().villagerCap() == KingdomLevel.of(2).villagerCap(), "screen got the wrong caps: " + view.growth());
+
+        // Villagers only move in while the Town Hall is loaded; nobody is near this one.
+        helper.assertTrue(KingdomVillagers.morning(level.getServer(), kingdom).isEmpty(), "a villager moved into an unloaded kingdom");
+        // Keep the hall and the chunks around it loaded, the way a nearby player would.
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                level.setChunkForced(center.x() + dx, center.z() + dz, true);
+            }
+        }
+        // Forcing a chunk takes a few ticks to reach entity ticking.
+        helper.startSequence().thenWaitUntil(() -> {
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    helper.assertTrue(level.isPositionEntityTicking(new net.minecraft.world.level.ChunkPos(center.x() + dx, center.z() + dz).getMiddleBlockPosition(hall.getY())),
+                            "forced chunks aren't loaded yet");
+                }
+            }
+        }).thenExecute(() -> {
+            // Villagers move in one per morning up to the cap.
+            int cap = kingdom.levelInfo().villagerCap();
+            for (int i = 0; i < cap; i++) {
+                Villager villager = KingdomVillagers.morning(level.getServer(), kingdom).orElseThrow(
+                        () -> new net.minecraft.gametest.framework.GameTestAssertException("no villager moved in"));
+                helper.assertTrue(villager.getTags().contains(KingdomVillagers.RESIDENT_TAG), "new villager isn't tied to the kingdom");
+                helper.assertTrue(villager.distanceToSqr(hall.getCenter()) < 16 * 16, "villager arrived too far from the town hall");
+            }
+            helper.assertTrue(kingdom.residents().size() == cap, "should have " + cap + " villagers, got " + kingdom.residents().size());
+            helper.assertTrue(KingdomVillagers.morning(level.getServer(), kingdom).isEmpty(), "a villager moved in past the cap");
+
+            // One dies: there's room again.
+            java.util.UUID first = kingdom.residents().iterator().next();
+            net.minecraft.world.entity.Entity resident = level.getEntity(first);
+            helper.assertTrue(resident != null, "resident villager isn't in the world");
+            resident.remove(net.minecraft.world.entity.Entity.RemovalReason.KILLED);
+            helper.assertTrue(kingdom.residents().size() == cap - 1 && !kingdom.residents().contains(first), "dead villager still counts");
+            helper.assertTrue(KingdomVillagers.morning(level.getServer(), kingdom).isPresent(), "no villager moved in after one died");
+
+            // Lowering the level (operator command) shrinks the land back.
+            Kingdoms.setLevel(level.getServer(), kingdom, 1);
+            helper.assertTrue(kingdom.claims().equals(java.util.Set.of(center)), "land didn't shrink back to the hall's chunk");
+            helper.assertTrue(KingdomData.get(level.getServer()).claimedBy(corner).isEmpty(), "released chunk is still claimed");
+
+            java.util.List.copyOf(kingdom.residents()).forEach(id -> java.util.Optional.ofNullable(level.getEntity(id))
+                    .ifPresent(net.minecraft.world.entity.Entity::discard));
+            Kingdoms.leave(leader);
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    level.setChunkForced(center.x() + dx, center.z() + dz, false);
+                }
+            }
+        }).thenSucceed();
     }
 }

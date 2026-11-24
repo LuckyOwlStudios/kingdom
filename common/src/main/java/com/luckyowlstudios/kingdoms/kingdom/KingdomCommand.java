@@ -2,6 +2,7 @@ package com.luckyowlstudios.kingdoms.kingdom;
 
 import com.mojang.authlib.GameProfile;
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
@@ -52,12 +53,32 @@ public final class KingdomCommand {
                                 .executes(KingdomCommand::kick)))
                 .then(Commands.literal("leave")
                         .executes(context -> result(Kingdoms.leave(context.getSource().getPlayerOrException()))))
+                .then(Commands.literal("levelup")
+                        .executes(context -> result(Kingdoms.levelUp(context.getSource().getPlayerOrException()))))
+                // Operators: set a kingdom's level outright, for testing or running a server.
+                .then(Commands.literal("setlevel").requires(source -> source.hasPermission(2))
+                        .then(Commands.argument("level", IntegerArgumentType.integer(1, KingdomLevel.MAX_LEVEL))
+                                .executes(context -> setLevel(context.getSource(), IntegerArgumentType.getInteger(context, "level"),
+                                        Kingdoms.ofPlayer(context.getSource().getPlayerOrException())))
+                                .then(Commands.argument("kingdom", StringArgumentType.greedyString()).suggests(KINGDOMS)
+                                        .executes(context -> setLevel(context.getSource(), IntegerArgumentType.getInteger(context, "level"),
+                                                KingdomData.get(context.getSource().getServer()).byName(StringArgumentType.getString(context, "kingdom")))))))
                 .then(DiplomacyCommand.build())
                 .then(Commands.literal("banner")
                         .executes(context -> {
                             ServerPlayer player = context.getSource().getPlayerOrException();
                             return result(Kingdoms.setBanner(player, player.getMainHandItem()));
                         })));
+    }
+
+    private static int setLevel(CommandSourceStack source, int level, Optional<Kingdom> kingdom) {
+        if (kingdom.isEmpty()) {
+            source.sendFailure(Component.translatable("kingdoms.kingdom.not_found"));
+            return 0;
+        }
+        Kingdoms.setLevel(source.getServer(), kingdom.get(), level);
+        source.sendSuccess(() -> Component.translatable("kingdoms.kingdom.level.set", kingdom.get().displayName(), level), true);
+        return 1;
     }
 
     private static int result(boolean success) {
@@ -87,6 +108,9 @@ public final class KingdomCommand {
         source.sendSuccess(() -> Component.translatable("kingdoms.kingdom.info.title", k.displayName()), false);
         source.sendSuccess(() -> Component.translatable("kingdoms.kingdom.info.leader", leader), false);
         source.sendSuccess(() -> Component.translatable("kingdoms.kingdom.info.members", k.members().size(), members), false);
+        KingdomLevel levelInfo = k.levelInfo();
+        source.sendSuccess(() -> Component.translatable("kingdoms.kingdom.info.level", k.level(),
+                k.residents().size(), levelInfo.villagerCap(), k.claims().size(), levelInfo.landCap()), false);
         k.townHall().ifPresentOrElse(
                 hall -> source.sendSuccess(() -> Component.translatable("kingdoms.kingdom.info.town_hall",
                         hall.pos().getX(), hall.pos().getY(), hall.pos().getZ()), false),
