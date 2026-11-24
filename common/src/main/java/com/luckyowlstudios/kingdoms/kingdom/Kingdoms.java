@@ -393,7 +393,7 @@ public final class Kingdoms {
         KingdomData.get(server).setLevel(kingdom, level);
         KingdomLevel info = kingdom.levelInfo();
         broadcast(server, kingdom, Component.translatable("kingdoms.kingdom.level.reached", kingdom.displayName(),
-                info.level(), info.villagerCap(), info.landCap()));
+                info.level(), info.villagerCap(), kingdom.landCap()));
     }
 
     /** A Town Hall block was removed. Its kingdom carries on, without a seat until it gets a new one. */

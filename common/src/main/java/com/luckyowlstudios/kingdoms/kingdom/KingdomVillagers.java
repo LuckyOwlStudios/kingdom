@@ -51,7 +51,10 @@ public final class KingdomVillagers {
         }
         for (Kingdom kingdom : List.copyOf(data.all())) {
             TaxCollector.morning(server, kingdom);
-            morning(server, kingdom);
+            // One villager a morning, and one more for each tier of Welcoming.
+            int arrivals = 1 + KingdomPerks.activeTier(kingdom, KingdomPerks.WELCOMING);
+            for (int i = 0; i < arrivals && morning(server, kingdom).isPresent(); i++) {
+            }
         }
     }
 

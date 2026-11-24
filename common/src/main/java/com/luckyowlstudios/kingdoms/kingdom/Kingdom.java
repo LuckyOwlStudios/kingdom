@@ -47,7 +47,7 @@ public final class Kingdom {
             Settings.CODEC.optionalFieldOf("settings", Settings.DEFAULT).forGetter(Kingdom::settings),
             MapId.CODEC.optionalFieldOf("map").forGetter(Kingdom::map),
             ChunkClaim.CODEC.listOf().optionalFieldOf("claims", List.of()).forGetter(kingdom -> List.copyOf(kingdom.claims)),
-            Growth.MAP_CODEC.forGetter(kingdom -> new Growth(kingdom.level, List.copyOf(kingdom.residents), Map.copyOf(kingdom.perks), kingdom.taxes))
+            Growth.MAP_CODEC.forGetter(kingdom -> new Growth(kingdom.level, List.copyOf(kingdom.residents), Map.copyOf(kingdom.perks), kingdom.taxes, kingdom.vault.getItems()))
     ).apply(instance, (id, name, color, founder, leader, members, invites, townHall, banner, officers, banned, settings, map, claims, growth) -> {
         Kingdom kingdom = new Kingdom(id, name, color, founder, leader.orElse(founder), new LinkedHashSet<>(members), townHall.orElse(null));
         kingdom.invites.addAll(invites);
@@ -63,20 +63,24 @@ public final class Kingdom {
             if (tier > 0) kingdom.perks.put(perk, tier);
         });
         kingdom.taxes = Math.max(0, growth.taxes());
+        for (int slot = 0; slot < Math.min(growth.vault().size(), kingdom.vault.getContainerSize()); slot++) {
+            kingdom.vault.setItem(slot, growth.vault().get(slot));
+        }
         return kingdom;
     }));
 
     /**
-     * Level, villagers, perk tiers and the tax treasury, saved as top-level fields ({@code level}, {@code residents},
-     * {@code perks}, {@code taxes}) but grouped so the kingdom codec stays under the 16-field limit. Add new saved
-     * fields here too.
+     * Level, villagers, perk tiers, the tax treasury and the shared vault, saved as top-level fields ({@code level},
+     * {@code residents}, {@code perks}, {@code taxes}, {@code vault}) but grouped so the kingdom codec stays under the
+     * 16-field limit. Add new saved fields here too.
      */
-    private record Growth(int level, List<UUID> residents, Map<ResourceLocation, Integer> perks, int taxes) {
+    private record Growth(int level, List<UUID> residents, Map<ResourceLocation, Integer> perks, int taxes, List<ItemStack> vault) {
         static final com.mojang.serialization.MapCodec<Growth> MAP_CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
                 Codec.INT.optionalFieldOf("level", 1).forGetter(Growth::level),
                 UUIDUtil.CODEC.listOf().optionalFieldOf("residents", List.of()).forGetter(Growth::residents),
                 Codec.unboundedMap(ResourceLocation.CODEC, Codec.INT).optionalFieldOf("perks", Map.of()).forGetter(Growth::perks),
-                Codec.INT.optionalFieldOf("taxes", 0).forGetter(Growth::taxes)
+                Codec.INT.optionalFieldOf("taxes", 0).forGetter(Growth::taxes),
+                ItemStack.OPTIONAL_CODEC.listOf().optionalFieldOf("vault", List.of()).forGetter(Growth::vault)
         ).apply(instance, Growth::new));
     }
 
@@ -114,6 +118,7 @@ public final class Kingdom {
     private final Set<UUID> residents = new LinkedHashSet<>();
     private final Map<ResourceLocation, Integer> perks = new LinkedHashMap<>();
     private int taxes;
+    private final net.minecraft.world.SimpleContainer vault = new net.minecraft.world.SimpleContainer(SharedVault.SIZE);
 
     Kingdom(UUID id, String name, DyeColor color, UUID founder, UUID leader, Set<UUID> members, GlobalPos townHall) {
         this.id = id;
@@ -222,6 +227,22 @@ public final class Kingdom {
     /** The tier the kingdom has unlocked of a perk, or 0. */
     public int perkTier(ResourceLocation perk) {
         return this.perks.getOrDefault(perk, 0);
+    }
+
+    /** How many chunks out from the Town Hall's chunk the kingdom's land reaches: its level's radius plus Expansion. */
+    public int claimRadius() {
+        return this.levelInfo().claimRadius() + KingdomPerks.activeTier(this, KingdomPerks.EXPANSION);
+    }
+
+    /** The most chunks the kingdom can hold: a square around the Town Hall's chunk. */
+    public int landCap() {
+        int side = 2 * this.claimRadius() + 1;
+        return side * side;
+    }
+
+    /** The Shared Vault's contents. Its menu only shows as many rows as the perk's tier allows. */
+    public net.minecraft.world.SimpleContainer vault() {
+        return this.vault;
     }
 
     /** Emeralds waiting in the Town Hall's treasury, from the Tax Collector perk. */

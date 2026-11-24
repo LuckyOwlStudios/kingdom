@@ -65,6 +65,9 @@ public class KingdomsNeoForge {
                 (payload, context) -> Kingdoms.tryCreate((ServerPlayer) context.player(), payload));
         registrar.playToClient(KingdomViewPayload.TYPE, KingdomViewPayload.STREAM_CODEC,
                 (payload, context) -> KingdomsClient.handle(payload));
+        registrar.playToClient(com.luckyowlstudios.kingdoms.network.PerkUnlockedPayload.TYPE,
+                com.luckyowlstudios.kingdoms.network.PerkUnlockedPayload.STREAM_CODEC,
+                (payload, context) -> KingdomsClient.handle(payload));
         registrar.playToServer(KingdomActionPayload.TYPE, KingdomActionPayload.STREAM_CODEC,
                 (payload, context) -> KingdomScreens.handle((ServerPlayer) context.player(), payload));
         registrar.playToClient(DiplomacyViewPayload.TYPE, DiplomacyViewPayload.STREAM_CODEC,

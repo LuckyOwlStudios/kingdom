@@ -16,6 +16,7 @@ public abstract class ServerPlayerMixin {
         ServerPlayer self = (ServerPlayer) (Object) this;
         if (self.tickCount % 20 == 0 && !self.isSpectator()) {
             KingdomMaps.explore(self);
+            com.luckyowlstudios.kingdoms.kingdom.KingdomPerkEffects.playerTick(self);
         }
     }
 }

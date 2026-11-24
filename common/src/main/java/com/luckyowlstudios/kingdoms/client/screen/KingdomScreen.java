@@ -1,6 +1,7 @@
 package com.luckyowlstudios.kingdoms.client.screen;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.luckyowlstudios.kingdoms.kingdom.Homecoming;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomPerk;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomPerks;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomRank;
@@ -807,12 +808,17 @@ public class KingdomScreen extends Screen {
      */
     private final class PerksTab extends KingdomTab {
 
-        private static final int NODE_SIZE = 26;
-        private static final int COLUMN_GAP = 64;
-        private static final int ROW_GAP = 44;
+        private static final int NODE_SIZE = 22;
+        private static final int COLUMN_GAP = 36;
+        private static final int ROW_GAP = 32;
+        /** Room on the left of the tree for the branch names. */
+        private static final int LABEL_WIDTH = 72;
+        private static final int BUTTON_WIDTH = 110;
 
         private final List<PerkNode> nodes = new ArrayList<>();
         private final Button collect;
+        private final Button vault;
+        private final Button home;
 
         PerksTab() {
             super("kingdoms.kingdom.screen.perks");
@@ -821,35 +827,62 @@ public class KingdomScreen extends Screen {
             }
             KingdomViewPayload.Growth growth = KingdomScreen.this.view.growth();
             this.collect = this.add(Button.builder(Component.translatable("kingdoms.kingdom.screen.collect_taxes", growth.taxes()),
-                    button -> KingdomScreen.this.send(KingdomActionPayload.of(Action.COLLECT_TAXES))).size(120, 20).build());
+                    button -> KingdomScreen.this.send(KingdomActionPayload.of(Action.COLLECT_TAXES))).size(BUTTON_WIDTH, 20).build());
             this.collect.active = KingdomScreen.this.isOfficer() && growth.taxes() > 0;
             this.collect.visible = growth.taxCap() > 0 || growth.taxes() > 0;
             if (!KingdomScreen.this.isOfficer()) {
                 this.collect.setTooltip(Tooltip.create(Component.translatable("kingdoms.kingdom.screen.collect_taxes.officer_only")));
             }
+            this.vault = this.add(Button.builder(Component.translatable("kingdoms.kingdom.screen.open_vault"),
+                    button -> KingdomScreen.this.send(KingdomActionPayload.of(Action.OPEN_VAULT))).size(BUTTON_WIDTH, 20).build());
+            this.vault.visible = this.activeTier(KingdomPerks.SHARED_VAULT) > 0;
+            this.home = this.add(Button.builder(Component.translatable("kingdoms.kingdom.screen.go_home"), button -> {
+                KingdomScreen.this.send(KingdomActionPayload.of(Action.GO_HOME));
+                KingdomScreen.this.onClose();
+            }).size(BUTTON_WIDTH, 20).build());
+            this.home.visible = this.activeTier(KingdomPerks.HOMECOMING) > 0;
+            this.home.setTooltip(Tooltip.create(Component.translatable("kingdoms.kingdom.screen.go_home.tooltip",
+                    Homecoming.cooldownSeconds(this.activeTier(KingdomPerks.HOMECOMING)) / 60)));
+        }
+
+        private int activeTier(KingdomPerk perk) {
+            KingdomViewPayload.Growth growth = KingdomScreen.this.view.growth();
+            return KingdomPerks.activeTier(perk, growth.level(), growth.perkTier(perk.id()));
+        }
+
+        private int treeLeft() {
+            return this.centerX() - 180 + LABEL_WIDTH;
+        }
+
+        private int treeTop() {
+            return this.top() + 16;
         }
 
         @Override
         protected void layout(int centerX, int top) {
-            int columns = this.nodes.stream().mapToInt(node -> node.perk.column()).max().orElse(0) + 1;
-            int treeLeft = centerX - ((columns - 1) * COLUMN_GAP + NODE_SIZE) / 2;
-            int treeTop = top + 36;
             for (PerkNode node : this.nodes) {
-                node.setPosition(treeLeft + node.perk.column() * COLUMN_GAP, treeTop + node.perk.row() * ROW_GAP);
+                node.setPosition(this.treeLeft() + node.perk.column() * COLUMN_GAP, this.treeTop() + node.perk.row() * ROW_GAP);
             }
-            this.collect.setPosition(centerX + 160 - 120, top);
+            int buttonLeft = centerX + 180 - BUTTON_WIDTH;
+            this.collect.setPosition(buttonLeft, top + 28);
+            this.vault.setPosition(buttonLeft, top + 56);
+            this.home.setPosition(buttonLeft, top + 80);
         }
 
         @Override
         void renderExtras(GuiGraphics graphics, int mouseX, int mouseY) {
             KingdomViewPayload.Growth growth = KingdomScreen.this.view.growth();
-            int left = this.centerX() - 160;
+            int left = this.centerX() - 180;
             int top = this.top();
             graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.perk_points",
                     growth.perkPoints(), KingdomPerks.POINTS_PER_LEVEL), left, top, 0xFFD700);
             if (this.collect.visible) {
                 graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.treasury",
-                        growth.taxes(), growth.taxCap()), left, top + 12, 0x55FF55);
+                        growth.taxes(), growth.taxCap()), this.collect.getX(), top + 16, 0x55FF55);
+            }
+            for (int row = 0; row < KingdomPerks.BRANCHES.size(); row++) {
+                graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.perk.branch." + KingdomPerks.BRANCHES.get(row)),
+                        left, this.treeTop() + row * ROW_GAP + (NODE_SIZE - 8) / 2, 0xA0A0A0);
             }
             if (!KingdomScreen.this.view.viewerRank().atLeast(KingdomPerks.UNLOCK_RANK)) {
                 graphics.drawCenteredString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.perks.leader_only"),
@@ -882,7 +915,7 @@ public class KingdomScreen extends Screen {
             }
         }
 
-        /** One perk in the tree: its icon, framed by how far along it is, and its tier underneath. */
+        /** One perk in the tree: its icon, framed by how far along it is, with a pip per tier underneath. */
         private final class PerkNode extends net.minecraft.client.gui.components.AbstractButton {
 
             private final KingdomPerk perk;
@@ -918,7 +951,7 @@ public class KingdomScreen extends Screen {
                 graphics.fill(x, y, x + NODE_SIZE, y + NODE_SIZE, frame);
                 graphics.fill(x + 2, y + 2, x + NODE_SIZE - 2, y + NODE_SIZE - 2,
                         this.isHoveredOrFocused() ? 0xFF9A9A9A : 0xFF6B6B6B);
-                graphics.renderItem(new ItemStack(this.perk.icon()), x + 5, y + 5);
+                graphics.renderItem(new ItemStack(this.perk.icon()), x + 3, y + 3);
                 if (tier == 0) {
                     // Not unlocked yet: dim the icon.
                     graphics.fill(x + 2, y + 2, x + NODE_SIZE - 2, y + NODE_SIZE - 2, 0x90000000);
@@ -929,8 +962,6 @@ public class KingdomScreen extends Screen {
                     int pipX = pipLeft + (n - 1) * 5;
                     graphics.fill(pipX, y + NODE_SIZE + 2, pipX + 4, y + NODE_SIZE + 6, n <= tier ? 0xFFFFD700 : 0xFF404040);
                 }
-                graphics.drawCenteredString(KingdomScreen.this.font, this.perk.displayName(), x + NODE_SIZE / 2, y + NODE_SIZE + 8,
-                        tier > 0 ? 0xFFFFFF : 0xA0A0A0);
             }
 
             List<Component> tooltip() {

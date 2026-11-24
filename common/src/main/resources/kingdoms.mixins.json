@@ -6,9 +6,14 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "EntityMixin",
+    "CropBlockMixin",
+    "ExplosionMixin",
     "MapItemSavedDataAccessor",
+    "NaturalSpawnerMixin",
     "PlayerMixin",
-    "ServerPlayerMixin"
+    "ServerPlayerGameModeMixin",
+    "ServerPlayerMixin",
+    "VillagerMixin"
   ],
   "client": [],
   "server": [],

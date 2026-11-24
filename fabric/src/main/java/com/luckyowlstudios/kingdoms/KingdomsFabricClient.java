@@ -32,6 +32,8 @@ public class KingdomsFabricClient implements ClientModInitializer {
         MenuScreens.register(ModMenus.GUIDE.get(), GuideScreen::new);
         ClientPlayNetworking.registerGlobalReceiver(OpenCreateKingdomPayload.TYPE, (payload, context) -> KingdomsClient.handle(payload));
         ClientPlayNetworking.registerGlobalReceiver(KingdomViewPayload.TYPE, (payload, context) -> KingdomsClient.handle(payload));
+        ClientPlayNetworking.registerGlobalReceiver(com.luckyowlstudios.kingdoms.network.PerkUnlockedPayload.TYPE,
+                (payload, context) -> KingdomsClient.handle(payload));
         ClientPlayNetworking.registerGlobalReceiver(DiplomacyViewPayload.TYPE, (payload, context) -> KingdomsClient.handle(payload));
     }
 }

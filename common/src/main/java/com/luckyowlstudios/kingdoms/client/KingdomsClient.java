@@ -5,6 +5,7 @@ import com.luckyowlstudios.kingdoms.client.screen.KingdomScreen;
 import com.luckyowlstudios.kingdoms.network.DiplomacyViewPayload;
 import com.luckyowlstudios.kingdoms.network.KingdomViewPayload;
 import com.luckyowlstudios.kingdoms.network.OpenCreateKingdomPayload;
+import com.luckyowlstudios.kingdoms.network.PerkUnlockedPayload;
 
 /** Client-side packet handling. Only ever loaded on the client. */
 public final class KingdomsClient {
@@ -18,6 +19,11 @@ public final class KingdomsClient {
 
     public static void handle(KingdomViewPayload payload) {
         KingdomScreen.show(payload);
+    }
+
+    public static void handle(PerkUnlockedPayload payload) {
+        com.luckyowlstudios.kingdoms.kingdom.KingdomPerks.byId(payload.perk()).ifPresent(perk ->
+                net.minecraft.client.Minecraft.getInstance().getToasts().addToast(new PerkToast(perk, payload.tier())));
     }
 
     public static void handle(DiplomacyViewPayload payload) {

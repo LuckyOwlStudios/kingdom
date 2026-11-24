@@ -51,7 +51,7 @@ public final class KingdomScreens {
         KingdomLevel level = kingdom.levelInfo();
         int cost = level.isMax() ? 0 : KingdomLevel.of(level.level() + 1).cost();
         return new KingdomViewPayload.Growth(level.level(), KingdomLevel.MAX_LEVEL, kingdom.residents().size(),
-                level.villagerCap(), level.landCap(), cost, KingdomPerks.availablePoints(kingdom), Map.copyOf(kingdom.perks()),
+                level.villagerCap(), kingdom.landCap(), cost, KingdomPerks.availablePoints(kingdom), Map.copyOf(kingdom.perks()),
                 kingdom.taxes(), TaxCollector.treasuryCap(server, kingdom));
     }
 
@@ -118,6 +118,16 @@ public final class KingdomScreens {
             case LEVEL_UP -> Kingdoms.levelUp(player);
             case UNLOCK_PERK -> KingdomPerks.upgrade(player, action.text());
             case COLLECT_TAXES -> TaxCollector.collect(player);
+            case OPEN_VAULT -> {
+                // The vault's menu replaces the Town Hall screen, so there's nothing to refresh.
+                SharedVault.open(player);
+                return;
+            }
+            case GO_HOME -> {
+                // The screen closes itself when the button is pressed.
+                Homecoming.goHome(player);
+                return;
+            }
             case LEAVE -> {
                 Kingdoms.leave(player);
                 return;

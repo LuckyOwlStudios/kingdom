@@ -7,7 +7,10 @@ import com.luckyowlstudios.kingdoms.kingdom.KingdomData;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomLevel;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomVillagers;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomMaps;
+import com.luckyowlstudios.kingdoms.kingdom.Homecoming;
+import com.luckyowlstudios.kingdoms.kingdom.KingdomPerkEffects;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomPerks;
+import com.luckyowlstudios.kingdoms.kingdom.SharedVault;
 import com.luckyowlstudios.kingdoms.kingdom.SharedXp;
 import com.luckyowlstudios.kingdoms.kingdom.TaxCollector;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomRank;
@@ -47,7 +50,7 @@ public class KingdomsGameTests implements FabricGameTest {
     private static BlockPos isolatedHall(GameTestHelper helper) {
         BlockPos origin = helper.absolutePos(BlockPos.ZERO);
         // Far enough apart that a kingdom at the top level never reaches another test's land.
-        int chunkX = 4096 + NEXT_HALL.getAndIncrement() * (2 * KingdomLevel.of(KingdomLevel.MAX_LEVEL).claimRadius() + 3);
+        int chunkX = 4096 + NEXT_HALL.getAndIncrement() * (2 * (KingdomLevel.of(KingdomLevel.MAX_LEVEL).claimRadius() + KingdomPerks.EXPANSION.maxTier()) + 3);
         BlockPos pos = new BlockPos(chunkX * 16 + 4, origin.getY() + 2, 4096 * 16 + 4);
         helper.getLevel().setBlockAndUpdate(pos, ModBlocks.TOWN_HALL.get().defaultBlockState());
         return pos;
@@ -486,6 +489,9 @@ public class KingdomsGameTests implements FabricGameTest {
                 TaxCollector.morning(level.getServer(), kingdom);
                 helper.assertTrue(kingdom.taxes() == 0, "taxes without the perk");
 
+                helper.assertFalse(KingdomPerks.upgrade(leader, KingdomPerks.TAX_COLLECTOR), "unlocked Tax Collector without Trade Deals");
+                helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.BOUNTIFUL_HARVEST)
+                        && KingdomPerks.upgrade(leader, KingdomPerks.TRADE_DEALS), "couldn't unlock the perks before Tax Collector");
                 helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.TAX_COLLECTOR), "couldn't unlock Tax Collector");
                 TaxCollector.morning(level.getServer(), kingdom);
                 helper.assertTrue(kingdom.taxes() == 2, "tier 1 should take 1 per villager, got " + kingdom.taxes());
@@ -520,5 +526,77 @@ public class KingdomsGameTests implements FabricGameTest {
                 }
             }
         }).thenSucceed();
+    }
+
+    @GameTest(template = EMPTY_STRUCTURE)
+    public void landPerksProtectAndGrowTheKingdom(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos hall = isolatedHall(helper);
+        ServerPlayer leader = helper.makeMockServerPlayerInLevel();
+        leader.moveTo(hall.getX() + 1.5, hall.getY(), hall.getZ() + 0.5);
+        String name = "Wallton " + level.getGameTime();
+        Kingdom kingdom = Kingdoms.tryCreate(leader, new CreateKingdomPayload(hall, name, DyeColor.GRAY)).orElseThrow();
+        ServerPlayer member = helper.makeMockServerPlayerInLevel();
+        Kingdoms.invite(leader, member);
+        Kingdoms.join(member, name);
+        ServerPlayer outsider = helper.makeMockServerPlayerInLevel();
+        Kingdoms.setLevel(level.getServer(), kingdom, KingdomLevel.MAX_LEVEL);
+        BlockPos inside = hall.offset(3, 0, 3);
+
+        // Fortified Walls: outsiders are stopped, members aren't; explosions only from tier 2.
+        helper.assertFalse(KingdomPerkEffects.wallsStop(outsider, inside, KingdomPerkEffects.WALLS_BREAKING), "walls up before the perk");
+        helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.WATCHTOWERS) && KingdomPerks.upgrade(leader, KingdomPerks.FORTIFIED_WALLS),
+                "couldn't unlock Fortified Walls");
+        helper.assertTrue(KingdomPerkEffects.wallsStop(outsider, inside, KingdomPerkEffects.WALLS_BREAKING), "an outsider can break blocks");
+        helper.assertFalse(KingdomPerkEffects.wallsStop(member, inside, KingdomPerkEffects.WALLS_BREAKING), "a member can't break blocks");
+        helper.assertFalse(KingdomPerkEffects.wallsStop(outsider, inside, KingdomPerkEffects.WALLS_USING), "tier 3 protection at tier 1");
+        helper.assertFalse(KingdomPerkEffects.wallsStopExplosion(level, inside), "explosions stopped at tier 1");
+        helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.FORTIFIED_WALLS), "couldn't upgrade Fortified Walls");
+        helper.assertTrue(KingdomPerkEffects.wallsStopExplosion(level, inside), "explosions not stopped at tier 2");
+        helper.assertFalse(KingdomPerkEffects.wallsStopExplosion(level, hall.offset(16 * 20, 0, 0)), "explosions stopped outside the land");
+
+        // Bountiful Harvest only works on the kingdom's land.
+        helper.assertTrue(KingdomPerkEffects.bountifulHarvestChance(level, inside) == 0, "harvest bonus before the perk");
+        helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.BOUNTIFUL_HARVEST), "couldn't unlock Bountiful Harvest");
+        helper.assertTrue(KingdomPerkEffects.bountifulHarvestChance(level, inside) > 0, "no harvest bonus on the land");
+
+        // Trade Deals: at least one off for members, nothing for outsiders.
+        helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.TRADE_DEALS), "couldn't unlock Trade Deals");
+        helper.assertTrue(KingdomPerkEffects.tradeDiscount(level, inside, member, 5) == 1, "members should get 1 off a 5 emerald trade");
+        helper.assertTrue(KingdomPerkEffects.tradeDiscount(level, inside, member, 30) == 3, "members should get 10% off");
+        helper.assertTrue(KingdomPerkEffects.tradeDiscount(level, inside, outsider, 30) == 0, "an outsider got a discount");
+
+        // Expansion grows the land by a ring.
+        int before = kingdom.claims().size();
+        helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.WELCOMING) && KingdomPerks.upgrade(leader, KingdomPerks.EXPANSION),
+                "couldn't unlock Expansion");
+        helper.assertTrue(kingdom.claimRadius() == KingdomLevel.of(KingdomLevel.MAX_LEVEL).claimRadius() + 1, "Expansion didn't add a ring");
+        helper.assertTrue(kingdom.claims().size() == kingdom.landCap() && kingdom.claims().size() > before,
+                "land didn't grow: " + before + " to " + kingdom.claims().size());
+
+        // Homecoming takes a member back to the Town Hall, then has a cooldown.
+        helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.SHARED_XP) && KingdomPerks.upgrade(leader, KingdomPerks.WELL_FED)
+                && KingdomPerks.upgrade(leader, KingdomPerks.HOMECOMING), "couldn't unlock Homecoming");
+        member.teleportTo(hall.getX() + 200.5, hall.getY() + 10, hall.getZ() + 0.5);
+        helper.assertTrue(Homecoming.goHome(member), "couldn't go home");
+        helper.assertTrue(member.distanceToSqr(hall.getCenter()) < 4 * 4, "member didn't arrive at the town hall");
+        helper.assertFalse(Homecoming.goHome(member), "went home twice without a cooldown");
+
+        // Shared Vault: at the Town Hall only, and its contents are saved with the kingdom.
+        helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.SHARED_VAULT), "couldn't unlock Shared Vault: "
+                + KingdomPerks.availablePoints(kingdom) + " points left");
+        helper.assertTrue(SharedVault.open(member), "couldn't open the vault at the town hall");
+        member.closeContainer();
+        outsider.teleportTo(hall.getX() + 0.5, hall.getY() + 1, hall.getZ() + 2.5);
+        helper.assertFalse(SharedVault.open(outsider), "an outsider opened the vault");
+        kingdom.vault().setItem(4, new ItemStack(net.minecraft.world.item.Items.DIAMOND, 3));
+        var ops = level.registryAccess().createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE);
+        Kingdom loaded = Kingdom.CODEC.parse(ops, Kingdom.CODEC.encodeStart(ops, kingdom).getOrThrow()).getOrThrow();
+        helper.assertTrue(loaded.vault().getItem(4).is(net.minecraft.world.item.Items.DIAMOND) && loaded.vault().getItem(4).getCount() == 3,
+                "vault contents weren't saved");
+
+        Kingdoms.leave(member);
+        Kingdoms.leave(leader);
+        helper.succeed();
     }
 }

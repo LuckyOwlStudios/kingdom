@@ -53,6 +53,10 @@ public final class KingdomCommand {
                                 .executes(KingdomCommand::kick)))
                 .then(Commands.literal("leave")
                         .executes(context -> result(Kingdoms.leave(context.getSource().getPlayerOrException()))))
+                .then(Commands.literal("home")
+                        .executes(context -> result(Homecoming.goHome(context.getSource().getPlayerOrException()))))
+                .then(Commands.literal("vault")
+                        .executes(context -> result(SharedVault.open(context.getSource().getPlayerOrException()))))
                 .then(Commands.literal("levelup")
                         .executes(context -> result(Kingdoms.levelUp(context.getSource().getPlayerOrException()))))
                 // Operators: set a kingdom's level outright, for testing or running a server.
@@ -110,7 +114,7 @@ public final class KingdomCommand {
         source.sendSuccess(() -> Component.translatable("kingdoms.kingdom.info.members", k.members().size(), members), false);
         KingdomLevel levelInfo = k.levelInfo();
         source.sendSuccess(() -> Component.translatable("kingdoms.kingdom.info.level", k.level(),
-                k.residents().size(), levelInfo.villagerCap(), k.claims().size(), levelInfo.landCap()), false);
+                k.residents().size(), levelInfo.villagerCap(), k.claims().size(), k.landCap()), false);
         k.townHall().ifPresentOrElse(
                 hall -> source.sendSuccess(() -> Component.translatable("kingdoms.kingdom.info.town_hall",
                         hall.pos().getX(), hall.pos().getY(), hall.pos().getZ()), false),
