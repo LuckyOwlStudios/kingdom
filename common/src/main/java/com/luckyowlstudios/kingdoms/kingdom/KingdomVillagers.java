@@ -195,7 +195,10 @@ public final class KingdomVillagers {
         villager.addTag(RESIDENT_TAG);
         data.addResident(kingdom, villager.getUUID());
         Kingdoms.broadcast(world.getServer(), kingdom, Component.translatable("kingdoms.kingdom.worker_joined",
-                villager.getTypeName(), kingdom.displayName(),
+                // The job's name, e.g. "Scholar" (Villager#getTypeName does the same, but isn't public).
+                Component.translatable("entity.minecraft.villager."
+                        + net.minecraft.core.registries.BuiltInRegistries.VILLAGER_PROFESSION.getKey(profession).getPath()),
+                kingdom.displayName(),
                 kingdom.residents().size(), kingdom.levelInfo().villagerCap()));
         return true;
     }
