@@ -85,6 +85,7 @@
   "kingdoms.kingdom.map.toggle.land": "Border",
   "kingdoms.kingdom.map.toggle.icons": "Icons",
   "kingdoms.kingdom.map.panel.level": "Level %s",
+  "kingdoms.kingdom.map.town_hall": "%s's Town Hall",
   "kingdoms.kingdom.map.help": "Drag to move, scroll to zoom, click an icon to select it",
   "kingdoms.kingdom.map.unexplored": "Nothing explored yet",
   "kingdoms.kingdom.screen.map_hint": "Right-click the Town Hall with an empty map to make this map bigger",
