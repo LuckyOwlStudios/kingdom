@@ -15,6 +15,9 @@
   "entrypoints": {
     "main": [
       "com.luckyowlstudios.kingdoms.KingdomsFabric"
+    ],
+    "client": [
+      "com.luckyowlstudios.kingdoms.KingdomsFabricClient"
     ]
   },
   "mixins": [
