@@ -1,6 +1,7 @@
 package com.luckyowlstudios.kingdoms.mixin;
 
 import com.luckyowlstudios.kingdoms.kingdom.KingdomPerkEffects;
+import com.luckyowlstudios.kingdoms.kingdom.KingdomVillagers;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.entity.player.Player;
@@ -25,6 +26,15 @@ public abstract class VillagerMixin {
             if (discount > 0) {
                 offer.addToSpecialPriceDiff(-discount);
             }
+        }
+    }
+
+    /** Every few seconds, a villager working at a Town Hall joins that hall's kingdom if it hasn't yet. */
+    @Inject(method = "customServerAiStep", at = @At("TAIL"))
+    private void kingdoms$joinTownHallKingdom(CallbackInfo ci) {
+        Villager self = (Villager) (Object) this;
+        if (self.tickCount % 100 == 0) {
+            KingdomVillagers.checkAdvisor(self);
         }
     }
 }
