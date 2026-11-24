@@ -77,7 +77,7 @@ public final class KingdomMapRenderer {
         return Component.literal(view.name()).withStyle(style -> style.withColor(view.color().getTextColor()));
     }
 
-    /** The Town Hall icon's name, "<Kingdom>'s Town Hall", with the kingdom's name in its colour. */
+    /** The Town Hall icon's name, "(kingdom name)'s Town Hall", with the kingdom's name in its colour. */
     public static Component townHallName(KingdomViewPayload view) {
         return Component.translatable("kingdoms.kingdom.map.town_hall", coloredName(view));
     }
