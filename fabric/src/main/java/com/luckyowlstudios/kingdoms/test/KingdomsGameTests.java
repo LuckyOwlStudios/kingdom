@@ -239,6 +239,9 @@ public class KingdomsGameTests implements FabricGameTest {
             KingdomMaps.grow(leader, kingdom, maps);
         }
         helper.assertTrue(KingdomMaps.scale(leader, kingdom) == KingdomMaps.MAX_SCALE, "map didn't grow to the max");
+        var data = KingdomMaps.getOrCreate(leader, kingdom).orElseThrow();
+        helper.assertTrue(data.centerX == hall.getX() && data.centerZ == hall.getZ(),
+                "map should be centred on the town hall " + hall + ", not " + data.centerX + ", " + data.centerZ);
         helper.assertTrue(maps.getCount() == 1, "should use one empty map per step, " + maps.getCount() + " left");
         KingdomMaps.explore(leader);
         KingdomScreens.open(leader, kingdom);

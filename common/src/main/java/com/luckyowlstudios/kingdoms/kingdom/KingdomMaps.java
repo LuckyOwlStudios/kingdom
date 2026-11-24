@@ -1,7 +1,7 @@
 package com.luckyowlstudios.kingdoms.kingdom;
 
+import com.luckyowlstudios.kingdoms.mixin.MapItemSavedDataAccessor;
 import net.minecraft.core.GlobalPos;
-import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.server.level.ServerLevel;
@@ -37,8 +37,14 @@ public final class KingdomMaps {
         }
         if (kingdom.map().isPresent()) {
             MapItemSavedData data = level.get().getMapData(kingdom.map().get());
-            if (data != null) {
+            GlobalPos hall = kingdom.townHall().get();
+            if (data != null && data.centerX == hall.pos().getX() && data.centerZ == hall.pos().getZ()) {
                 return Optional.of(data);
+            }
+            if (data != null) {
+                // Made before maps were centred on the Town Hall: start again at the same size, centred properly.
+                create(player, kingdom, level.get(), hall, data.scale);
+                return kingdom.map().map(id -> level.get().getMapData(id));
             }
         }
         create(player, kingdom, level.get(), kingdom.townHall().get(), (byte) 0);
@@ -46,11 +52,13 @@ public final class KingdomMaps {
     }
 
     private static void create(ServerPlayer player, Kingdom kingdom, ServerLevel level, GlobalPos hall, byte scale) {
-        ItemStack map = MapItem.create(level, hall.pos().getX(), hall.pos().getZ(), scale, true, false);
-        MapId id = map.get(DataComponents.MAP_ID);
-        if (id != null) {
-            KingdomData.get(player.server).setMap(kingdom, id);
-        }
+        // Not MapItem.create: vanilla snaps a map's centre to a world-wide grid, which would leave the Town Hall
+        // off in a corner and make the map grow lopsided. Kingdom maps are centred exactly on the hall instead.
+        MapItemSavedData data = MapItemSavedDataAccessor.kingdoms$create(hall.pos().getX(), hall.pos().getZ(), scale,
+                true, false, false, level.dimension());
+        MapId id = level.getFreeMapId();
+        level.setMapData(id, data);
+        KingdomData.get(player.server).setMap(kingdom, id);
     }
 
     public static int scale(ServerPlayer player, Kingdom kingdom) {
