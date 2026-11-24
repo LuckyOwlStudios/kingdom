@@ -1,6 +1,7 @@
 package com.luckyowlstudios.kingdoms.client.screen;
 
 import com.luckyowlstudios.kingdoms.Constants;
+import com.luckyowlstudios.kingdoms.kingdom.KingdomMap;
 import com.luckyowlstudios.kingdoms.network.KingdomViewPayload;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Minecraft;
@@ -13,7 +14,6 @@ import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 
 import java.util.HashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -21,7 +21,8 @@ import java.util.Set;
  * Town Hall's Overview tab and by the full {@link KingdomMapScreen}.
  * <p>
  * Positions are given as the screen position of the map's top-left corner plus a zoom (screen pixels per map
- * pixel); the map itself is {@link #MAP_SIZE} map pixels across.
+ * pixel). The map is a grid of vanilla maps, each {@link #MAP_SIZE} pixels across at one block per pixel, so
+ * growing the kingdom map adds land around the edge rather than changing the scale.
  */
 public final class KingdomMapRenderer {
 
@@ -44,57 +45,75 @@ public final class KingdomMapRenderer {
     private KingdomMapRenderer() {
     }
 
-    public static Optional<MapItemSavedData> mapData(KingdomViewPayload view) {
+    /** Map pixels across the whole grid of maps. */
+    public static int gridSize(KingdomViewPayload view) {
+        return (view.mapRadius() * 2 + 1) * MAP_SIZE;
+    }
+
+    /** True once the client has any of the kingdom's maps to draw. */
+    public static boolean hasMapData(KingdomViewPayload view) {
         Minecraft minecraft = Minecraft.getInstance();
-        return view.map().map(id -> minecraft.level == null ? null : minecraft.level.getMapData(id));
+        return minecraft.level != null && view.mapTiles().stream().anyMatch(tile -> minecraft.level.getMapData(tile.id()) != null);
     }
 
-    /** The block at the map's left (or top) edge, worked out the same way vanilla fills a map in (MapItem#update). */
-    private static int worldEdge(KingdomViewPayload view, int center) {
-        int scale = 1 << view.mapScale();
-        return (center / scale - MAP_SIZE / 2) * scale;
-    }
-
-    /** A world X coordinate as a map pixel X. */
+    /**
+     * A world X coordinate as a map pixel X, counted from the grid's left edge. Every map is at full detail (one block
+     * per pixel) and the middle one is centred on the Town Hall, so its left edge is 64 blocks west of the hall.
+     */
     public static float toMapX(KingdomViewPayload view, double worldX) {
-        return (float) ((worldX - worldEdge(view, view.mapCenterX())) / (1 << view.mapScale()));
+        return (float) (worldX - (view.townHall().getX() - MAP_SIZE / 2) + view.mapRadius() * MAP_SIZE);
     }
 
-    /** A world Z coordinate as a map pixel Y. */
+    /** A world Z coordinate as a map pixel Y, counted from the grid's top edge. */
     public static float toMapY(KingdomViewPayload view, double worldZ) {
-        return (float) ((worldZ - worldEdge(view, view.mapCenterZ())) / (1 << view.mapScale()));
+        return (float) (worldZ - (view.townHall().getZ() - MAP_SIZE / 2) + view.mapRadius() * MAP_SIZE);
     }
 
     public static Component coloredName(KingdomViewPayload view) {
         return Component.literal(view.name()).withStyle(style -> style.withColor(view.color().getTextColor()));
     }
 
-    /** Everything marked on the map. Just the Town Hall for now, kept on the map's edge if it's off the map. */
+    /** Everything marked on the map. Just the Town Hall for now, in the middle of the grid. */
     public static List<Icon> icons(KingdomViewPayload view) {
-        float half = ICON_SIZE / 2.0F;
-        float x = Mth.clamp(toMapX(view, view.townHall().getX() + 0.5), half, MAP_SIZE - half);
-        float y = Mth.clamp(toMapY(view, view.townHall().getZ() + 0.5), half, MAP_SIZE - half);
+        float x = toMapX(view, view.townHall().getX() + 0.5);
+        float y = toMapY(view, view.townHall().getZ() + 0.5);
         return List.of(new Icon(TOWN_HALL_ICON, x, y, coloredName(view)));
     }
 
-    /** Vanilla's map paper, the map's pixels, and the kingdom's land, with the map's top-left corner at x, y. */
-    public static void drawMap(GuiGraphics graphics, KingdomViewPayload view, float x, float y, float zoom) {
+    /** Vanilla's map paper, sized to the whole grid, with the grid's top-left corner at x, y. */
+    public static void drawPaper(GuiGraphics graphics, float x, float y, int size, float zoom) {
         PoseStack pose = graphics.pose();
         pose.pushPose();
         pose.translate(x, y, 0.0F);
         pose.scale(zoom, zoom, 1.0F);
-        graphics.blit(MAP_BACKGROUND, -6, -6, 0, 0, MAP_SIZE + 12, MAP_SIZE + 12, MAP_SIZE + 12, MAP_SIZE + 12);
-        Optional<MapItemSavedData> data = mapData(view);
-        if (data.isPresent()) {
-            pose.translate(0.0F, 0.0F, 1.0F);
-            Minecraft.getInstance().gameRenderer.getMapRenderer().render(pose, graphics.bufferSource(), view.map().get(),
-                    data.get(), true, 0xF000F0);
-        }
+        graphics.blit(MAP_BACKGROUND, -6, -6, 0, 0, size + 12, size + 12, size + 12, size + 12);
         pose.popPose();
-        graphics.flush();
-        if (data.isPresent()) {
-            drawClaims(graphics, view, x, y, zoom);
+    }
+
+    /**
+     * Every map of the grid side by side, then the kingdom's land over them, with the grid's top-left corner at x, y.
+     * Callers clip it to what they want to show.
+     */
+    public static void drawMap(GuiGraphics graphics, KingdomViewPayload view, float x, float y, float zoom) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null) {
+            return;
         }
+        PoseStack pose = graphics.pose();
+        int radius = view.mapRadius();
+        for (KingdomMap.Tile tile : view.mapTiles()) {
+            MapItemSavedData data = minecraft.level.getMapData(tile.id());
+            if (data == null) {
+                continue;
+            }
+            pose.pushPose();
+            pose.translate(x + (tile.x() + radius) * MAP_SIZE * zoom, y + (tile.z() + radius) * MAP_SIZE * zoom, 1.0F);
+            pose.scale(zoom, zoom, 1.0F);
+            minecraft.gameRenderer.getMapRenderer().render(pose, graphics.bufferSource(), tile.id(), data, true, 0xF000F0);
+            pose.popPose();
+        }
+        graphics.flush();
+        drawClaims(graphics, view, x, y, zoom);
     }
 
     /**
@@ -109,7 +128,8 @@ public final class KingdomMapRenderer {
         int rgb = view.color().getTextColor() & 0xFFFFFF;
         int fill = 0x55000000 | rgb;
         int edge = 0xDD000000 | rgb;
-        graphics.enableScissor(Mth.floor(x), Mth.floor(y), Mth.ceil(x + MAP_SIZE * zoom), Mth.ceil(y + MAP_SIZE * zoom));
+        int size = gridSize(view);
+        graphics.enableScissor(Mth.floor(x), Mth.floor(y), Mth.ceil(x + size * zoom), Mth.ceil(y + size * zoom));
         PoseStack pose = graphics.pose();
         pose.pushPose();
         pose.translate(0.0F, 0.0F, 2.0F); // above the map

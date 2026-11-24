@@ -3,6 +3,7 @@ package com.luckyowlstudios.kingdoms.client.screen;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomPerk;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomPerks;
+import com.luckyowlstudios.kingdoms.kingdom.KingdomMaps;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomRank;
 import com.luckyowlstudios.kingdoms.network.CloseTownHallPayload;
 import com.luckyowlstudios.kingdoms.network.DiplomacyActionPayload;
@@ -314,19 +315,26 @@ public class KingdomScreen extends Screen {
                     KingdomScreen.this.view.claimCount(), growth.landCap()), left, top + 102, 0xA0A0A0);
 
             // The kingdom map, on vanilla's map background. Clicking it opens the full map screen.
+            // It shows the middle map, around the Town Hall, at full size; the rest is on the full map screen.
             int mapLeft = this.mapLeft();
-            KingdomMapRenderer.drawMap(graphics, KingdomScreen.this.view, mapLeft, top, 1.0F);
+            KingdomViewPayload view = KingdomScreen.this.view;
+            KingdomMapRenderer.drawPaper(graphics, mapLeft, top, MAP_SIZE, 1.0F);
+            int gridLeft = mapLeft - view.mapRadius() * MAP_SIZE;
+            int gridTop = top - view.mapRadius() * MAP_SIZE;
+            graphics.enableScissor(mapLeft, top, mapLeft + MAP_SIZE, top + MAP_SIZE);
+            KingdomMapRenderer.drawMap(graphics, view, gridLeft, gridTop, 1.0F);
+            graphics.disableScissor();
             boolean overHall = false;
-            if (KingdomMapRenderer.mapData(KingdomScreen.this.view).isPresent()) {
-                for (KingdomMapRenderer.Icon icon : KingdomMapRenderer.icons(KingdomScreen.this.view)) {
-                    int x = mapLeft + Math.round(icon.mapX());
-                    int y = top + Math.round(icon.mapY());
+            if (KingdomMapRenderer.hasMapData(view)) {
+                for (KingdomMapRenderer.Icon icon : KingdomMapRenderer.icons(view)) {
+                    int x = gridLeft + Math.round(icon.mapX());
+                    int y = gridTop + Math.round(icon.mapY());
                     KingdomMapRenderer.drawIcon(graphics, icon, x, y, KingdomMapRenderer.ICON_SIZE, false);
                     overHall |= Math.abs(mouseX - x) <= 5 && Math.abs(mouseY - y) <= 5;
                 }
             }
             graphics.drawCenteredString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.map_scale",
-                    KingdomScreen.this.view.mapScale(), 4), mapLeft + MAP_SIZE / 2, top + MAP_SIZE + 10, 0xA0A0A0);
+                    view.mapRadius(), KingdomMaps.MAX_RADIUS), mapLeft + MAP_SIZE / 2, top + MAP_SIZE + 10, 0xA0A0A0);
             if (overHall) {
                 graphics.renderTooltip(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.town_hall_of",
                         KingdomScreen.this.coloredName()), mouseX, mouseY);

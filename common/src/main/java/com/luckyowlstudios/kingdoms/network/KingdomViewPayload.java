@@ -1,6 +1,7 @@
 package com.luckyowlstudios.kingdoms.network;
 
 import com.luckyowlstudios.kingdoms.Constants;
+import com.luckyowlstudios.kingdoms.kingdom.KingdomMap;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomRank;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.UUIDUtil;
@@ -18,7 +19,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -27,13 +27,14 @@ import java.util.UUID;
  *
  * @param viewerRank the rank of the player looking, which decides which buttons work
  * @param members    members and banned players; banned ones have rank {@link KingdomRank#NONE}
- * @param mapCenterX the block the kingdom map is centred on (clients don't get this with the map itself)
+ * @param mapRadius  rings of maps around the middle one, which is centred on the Town Hall (see {@link KingdomMap})
+ * @param mapTiles   the maps of the grid
  * @param claims     the kingdom's claimed chunks in the map's dimension, to draw on the map
  * @param claimCount how many chunks the kingdom holds in every dimension
  * @param growth     the kingdom's level and what it allows
  */
 public record KingdomViewPayload(BlockPos townHall, String name, DyeColor color, ItemStack banner,
-                                 Optional<MapId> map, int mapScale, int mapCenterX, int mapCenterZ,
+                                 int mapRadius, List<KingdomMap.Tile> mapTiles,
                                  List<ChunkPos> claims, int claimCount, boolean inviteOnly, boolean friendlyFire,
                                  KingdomRank viewerRank, List<Member> members, Growth growth) implements CustomPacketPayload {
 
@@ -96,10 +97,13 @@ public record KingdomViewPayload(BlockPos townHall, String name, DyeColor color,
                 ByteBufCodecs.STRING_UTF8.encode(buf, view.name);
                 DyeColor.STREAM_CODEC.encode(buf, view.color);
                 ItemStack.OPTIONAL_STREAM_CODEC.encode(buf, view.banner);
-                ByteBufCodecs.optional(MapId.STREAM_CODEC).encode(buf, view.map);
-                buf.writeVarInt(view.mapScale);
-                buf.writeInt(view.mapCenterX);
-                buf.writeInt(view.mapCenterZ);
+                buf.writeVarInt(view.mapRadius);
+                buf.writeVarInt(view.mapTiles.size());
+                view.mapTiles.forEach(tile -> {
+                    buf.writeVarInt(tile.x());
+                    buf.writeVarInt(tile.z());
+                    MapId.STREAM_CODEC.encode(buf, tile.id());
+                });
                 buf.writeVarInt(view.claims.size());
                 view.claims.forEach(chunk -> buf.writeLong(chunk.toLong()));
                 buf.writeVarInt(view.claimCount);
@@ -115,10 +119,12 @@ public record KingdomViewPayload(BlockPos townHall, String name, DyeColor color,
                 String name = ByteBufCodecs.STRING_UTF8.decode(buf);
                 DyeColor color = DyeColor.STREAM_CODEC.decode(buf);
                 ItemStack banner = ItemStack.OPTIONAL_STREAM_CODEC.decode(buf);
-                Optional<MapId> map = ByteBufCodecs.optional(MapId.STREAM_CODEC).decode(buf);
-                int mapScale = buf.readVarInt();
-                int mapCenterX = buf.readInt();
-                int mapCenterZ = buf.readInt();
+                int mapRadius = buf.readVarInt();
+                int tileCount = buf.readVarInt();
+                List<KingdomMap.Tile> mapTiles = new ArrayList<>(tileCount);
+                for (int i = 0; i < tileCount; i++) {
+                    mapTiles.add(new KingdomMap.Tile(buf.readVarInt(), buf.readVarInt(), MapId.STREAM_CODEC.decode(buf)));
+                }
                 int claimSize = buf.readVarInt();
                 List<ChunkPos> claims = new ArrayList<>(claimSize);
                 for (int i = 0; i < claimSize; i++) {
@@ -134,7 +140,7 @@ public record KingdomViewPayload(BlockPos townHall, String name, DyeColor color,
                     members.add(Member.STREAM_CODEC.decode(buf));
                 }
                 Growth growth = Growth.STREAM_CODEC.decode(buf);
-                return new KingdomViewPayload(townHall, name, color, banner, map, mapScale, mapCenterX, mapCenterZ,
+                return new KingdomViewPayload(townHall, name, color, banner, mapRadius, mapTiles,
                         claims, claimCount, inviteOnly, friendlyFire, viewerRank, members, growth);
             });
 
