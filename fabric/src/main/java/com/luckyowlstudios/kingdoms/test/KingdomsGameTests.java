@@ -251,7 +251,7 @@ public class KingdomsGameTests implements FabricGameTest {
         helper.succeed();
     }
 
-    @GameTest(template = EMPTY_STRUCTURE)
+    @GameTest(template = EMPTY_STRUCTURE, timeoutTicks = 400)
     public void levellingUpGrowsVillagersAndLand(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         BlockPos hall = isolatedHall(helper);
@@ -287,7 +287,15 @@ public class KingdomsGameTests implements FabricGameTest {
                 level.setChunkForced(center.x() + dx, center.z() + dz, true);
             }
         }
-        helper.startSequence().thenIdle(5).thenExecute(() -> {
+        // Forcing a chunk takes a few ticks to reach entity ticking.
+        helper.startSequence().thenWaitUntil(() -> {
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    helper.assertTrue(level.isPositionEntityTicking(new net.minecraft.world.level.ChunkPos(center.x() + dx, center.z() + dz).getMiddleBlockPosition(hall.getY())),
+                            "forced chunks aren't loaded yet");
+                }
+            }
+        }).thenExecute(() -> {
             // Villagers move in one per morning up to the cap.
             int cap = kingdom.levelInfo().villagerCap();
             for (int i = 0; i < cap; i++) {
