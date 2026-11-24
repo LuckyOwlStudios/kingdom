@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.model.geom.PartPose;
+import net.minecraft.client.model.geom.builders.CubeDeformation;
 import net.minecraft.client.model.geom.builders.CubeListBuilder;
 import net.minecraft.client.model.geom.builders.LayerDefinition;
 import net.minecraft.client.model.geom.builders.MeshDefinition;
@@ -17,7 +18,7 @@ import net.minecraft.util.Mth;
  * the book lies closed.
  * <p>
  * Model space, in pixels: the spine runs along y, the covers open about it towards -z and +z, and the closed book
- * extends 6 pixels along +x from the spine. Texture: {@code textures/entity/town_hall_book.png}.
+ * extends 6 pixels along +x from the spine. Its texture layout is vanilla's, so it uses {@link TownHallBookTexture}.
  */
 public class TownHallBookModel {
 
@@ -49,15 +50,16 @@ public class TownHallBookModel {
         root.addOrReplaceChild("right_cover", CubeListBuilder.create().texOffs(16, 0)
                 .addBox(0.0F, -5.0F, -0.005F, 6.0F, 10.0F, 0.005F), PartPose.offset(0.0F, 0.0F, COVER_OFFSET));
         // The spine joins the two covers' edges, just outside the pages.
+        // It's grown to reach the covers without stretching its texture.
         root.addOrReplaceChild("spine", CubeListBuilder.create().texOffs(12, 0)
-                .addBox(-COVER_OFFSET, -5.0F, -0.005F, COVER_OFFSET * 2.0F, 10.0F, 0.005F),
+                .addBox(-1.0F, -5.0F, -0.005F, 2.0F, 10.0F, 0.005F, new CubeDeformation(COVER_OFFSET - 1.0F, 0.0F, 0.0F)),
                 PartPose.rotation(0.0F, Mth.HALF_PI, 0.0F));
         // Pages: a 5 x 8 x 1 block on each side, meeting back to back in the middle.
         root.addOrReplaceChild("left_pages", CubeListBuilder.create().texOffs(0, 10)
                 .addBox(SPINE_GAP, -4.0F, -1.0F, 5.0F, 8.0F, 1.0F), PartPose.ZERO);
         root.addOrReplaceChild("right_pages", CubeListBuilder.create().texOffs(12, 10)
                 .addBox(SPINE_GAP, -4.0F, 0.0F, 5.0F, 8.0F, 1.0F), PartPose.ZERO);
-        return LayerDefinition.create(mesh, 32, 32);
+        return LayerDefinition.create(mesh, 64, 32);
     }
 
     /**
