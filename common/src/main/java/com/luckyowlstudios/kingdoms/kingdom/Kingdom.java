@@ -9,7 +9,6 @@ import net.minecraft.network.chat.TextColor;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.saveddata.maps.MapId;
 
 import java.util.Collections;
 import java.util.HashSet;
@@ -45,7 +44,7 @@ public final class Kingdom {
             UUIDUtil.CODEC.listOf().optionalFieldOf("officers", List.of()).forGetter(kingdom -> List.copyOf(kingdom.officers)),
             UUIDUtil.CODEC.listOf().optionalFieldOf("banned", List.of()).forGetter(kingdom -> List.copyOf(kingdom.banned)),
             Settings.CODEC.optionalFieldOf("settings", Settings.DEFAULT).forGetter(Kingdom::settings),
-            MapId.CODEC.optionalFieldOf("map").forGetter(Kingdom::map),
+            KingdomMap.MAP_CODEC.forGetter(Kingdom::map),
             ChunkClaim.CODEC.listOf().optionalFieldOf("claims", List.of()).forGetter(kingdom -> List.copyOf(kingdom.claims)),
             Growth.MAP_CODEC.forGetter(kingdom -> new Growth(kingdom.level, List.copyOf(kingdom.residents), Map.copyOf(kingdom.perks), kingdom.taxes, kingdom.xp))
     ).apply(instance, (id, name, color, founder, leader, members, invites, townHall, banner, officers, banned, settings, map, claims, growth) -> {
@@ -55,7 +54,7 @@ public final class Kingdom {
         kingdom.officers.addAll(officers);
         kingdom.banned.addAll(banned);
         kingdom.settings = settings;
-        kingdom.map = map.orElse(null);
+        kingdom.map = map;
         kingdom.claims.addAll(claims);
         kingdom.level = Math.clamp(growth.level(), 1, KingdomLevel.MAX_LEVEL);
         kingdom.residents.addAll(growth.residents());
@@ -110,7 +109,7 @@ public final class Kingdom {
     private final Set<UUID> officers = new HashSet<>();
     private final Set<UUID> banned = new HashSet<>();
     private Settings settings = Settings.DEFAULT;
-    private MapId map;
+    private KingdomMap map = KingdomMap.EMPTY;
     private final Set<ChunkClaim> claims = new LinkedHashSet<>();
     private int level = 1;
     private final Set<UUID> residents = new LinkedHashSet<>();
@@ -184,9 +183,9 @@ public final class Kingdom {
         return this.settings;
     }
 
-    /** The kingdom's map, centred on its Town Hall. Grows when given empty maps. */
-    public Optional<MapId> map() {
-        return Optional.ofNullable(this.map);
+    /** The kingdom's map, a grid of maps around its Town Hall. Grows when given empty maps. */
+    public KingdomMap map() {
+        return this.map;
     }
 
     /** Every chunk the kingdom has claimed, in the order it claimed them. */
@@ -293,7 +292,7 @@ public final class Kingdom {
         this.settings = settings;
     }
 
-    void setMap(MapId map) {
+    void setMap(KingdomMap map) {
         this.map = map;
     }
 
