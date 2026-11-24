@@ -2,6 +2,9 @@ package com.luckyowlstudios.kingdoms.client.screen;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomRank;
+import com.luckyowlstudios.kingdoms.network.CloseTownHallPayload;
+import com.luckyowlstudios.kingdoms.network.DiplomacyActionPayload;
+import com.luckyowlstudios.kingdoms.network.DiplomacyViewPayload;
 import com.luckyowlstudios.kingdoms.network.KingdomActionPayload;
 import com.luckyowlstudios.kingdoms.network.KingdomActionPayload.Action;
 import com.luckyowlstudios.kingdoms.network.KingdomViewPayload;
@@ -10,7 +13,6 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
-import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.ObjectSelectionList;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.components.tabs.Tab;
@@ -21,38 +23,36 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.BannerItem;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
-import net.minecraft.world.level.ChunkPos;
-import net.minecraft.util.Mth;
 
 import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.Set;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Consumer;
 
 /**
- * The Town Hall screen for members of its kingdom: Overview, Members, Customize and Settings tabs, using
+ * The Town Hall screen for members of its kingdom: Overview, Members, Diplomacy, Customize and Settings tabs, using
  * vanilla's tab bar (as on the Create World screen) and vanilla widgets throughout.
  */
 public class KingdomScreen extends Screen {
 
-    private static final ResourceLocation MAP_BACKGROUND = ResourceLocation.withDefaultNamespace("textures/map/map_background.png");
-    private static final int MAP_SIZE = 128;
+    private static final int MAP_SIZE = KingdomMapRenderer.MAP_SIZE;
+
+    /** The latest relations from the server. Kept between screens: it arrives right after the kingdom view. */
+    private static DiplomacyViewPayload diplomacyView = DiplomacyViewPayload.EMPTY;
 
     private KingdomViewPayload view;
     private final TabManager tabManager = new TabManager(this::addRenderableWidget, this::removeWidget);
     private TabNavigationBar tabBar;
     private int selectedTab;
     private UUID selectedMember;
+    private UUID selectedKingdom;
 
     private OverviewTab overview;
     private MembersTab members;
+    private DiplomacyTab diplomacy;
     private CustomizeTab customize;
     private SettingsTab settings;
 
@@ -65,8 +65,24 @@ public class KingdomScreen extends Screen {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.screen instanceof KingdomScreen screen) {
             screen.update(view);
+        } else if (minecraft.screen instanceof KingdomMapScreen map) {
+            // Refresh the map in place, and the Town Hall behind it for when the map is closed.
+            map.parent().view = view;
+            map.update(view);
+        } else if (minecraft.screen instanceof InvitePlayersScreen invite) {
+            // An invite was sent from the player list: keep it open, and refresh the Town Hall behind it.
+            invite.parent().view = view;
+            invite.update(view);
         } else {
             minecraft.setScreen(new KingdomScreen(view));
+        }
+    }
+
+    /** Relations from the server, when the Town Hall opens or after any change to them. */
+    public static void showDiplomacy(DiplomacyViewPayload view) {
+        diplomacyView = view;
+        if (Minecraft.getInstance().screen instanceof KingdomScreen screen) {
+            screen.rebuildWidgets();
         }
     }
 
@@ -84,6 +100,12 @@ public class KingdomScreen extends Screen {
         return this.view.viewerRank().atLeast(KingdomRank.OFFICER);
     }
 
+    private void send(DiplomacyActionPayload action) {
+        if (this.minecraft != null && this.minecraft.getConnection() != null) {
+            this.minecraft.getConnection().send(new ServerboundCustomPayloadPacket(action));
+        }
+    }
+
     private void send(KingdomActionPayload action) {
         if (this.minecraft != null && this.minecraft.getConnection() != null) {
             this.minecraft.getConnection().send(new ServerboundCustomPayloadPacket(action));
@@ -98,10 +120,11 @@ public class KingdomScreen extends Screen {
     protected void init() {
         this.overview = new OverviewTab();
         this.members = new MembersTab();
+        this.diplomacy = new DiplomacyTab();
         this.customize = new CustomizeTab();
         this.settings = new SettingsTab();
         this.tabBar = TabNavigationBar.builder(this.tabManager, this.width)
-                .addTabs(this.overview, this.members, this.customize, this.settings)
+                .addTabs(this.overview, this.members, this.diplomacy, this.customize, this.settings)
                 .build();
         this.addRenderableWidget(this.tabBar);
         this.addRenderableWidget(Button.builder(CommonComponents.GUI_DONE, button -> this.onClose())
@@ -125,7 +148,7 @@ public class KingdomScreen extends Screen {
         super.tick();
         Tab current = this.tabManager.getCurrentTab();
         if (current != null) {
-            this.selectedTab = List.of(this.overview, this.members, this.customize, this.settings).indexOf(current);
+            this.selectedTab = List.of(this.overview, this.members, this.diplomacy, this.customize, this.settings).indexOf(current);
         }
     }
 
@@ -138,8 +161,30 @@ public class KingdomScreen extends Screen {
     }
 
     @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (super.mouseClicked(mouseX, mouseY, button)) {
+            return true;
+        }
+        if (button == 0 && this.tabManager.getCurrentTab() == this.overview && this.overview.isOverMap(mouseX, mouseY)
+                && this.minecraft != null) {
+            this.minecraft.setScreen(new KingdomMapScreen(this, this.view));
+            return true;
+        }
+        return false;
+    }
+
+    @Override
     public boolean isPauseScreen() {
         return false;
+    }
+
+    /** Closed (or replaced by another screen): let the server close the book on the Town Hall. */
+    @Override
+    public void removed() {
+        super.removed();
+        if (this.minecraft != null && this.minecraft.getConnection() != null) {
+            this.minecraft.getConnection().send(new ServerboundCustomPayloadPacket(new CloseTownHallPayload(this.view.townHall())));
+        }
     }
 
     // ---- Tabs ----
@@ -263,70 +308,42 @@ public class KingdomScreen extends Screen {
             graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.land",
                     KingdomScreen.this.view.claimCount(), growth.landCap()), left, top + 102, 0xA0A0A0);
 
-            // The kingdom map, on vanilla's map background.
-            int mapLeft = centerX + 10;
-            graphics.blit(MAP_BACKGROUND, mapLeft - 6, top - 6, 0, 0, MAP_SIZE + 12, MAP_SIZE + 12, MAP_SIZE + 12, MAP_SIZE + 12);
-            Minecraft minecraft = Minecraft.getInstance();
-            MapItemSavedData data = KingdomScreen.this.view.map().map(id -> minecraft.level == null ? null : minecraft.level.getMapData(id)).orElse(null);
-            if (data != null) {
-                PoseStack pose = graphics.pose();
-                pose.pushPose();
-                pose.translate(mapLeft, top, 1.0F);
-                minecraft.gameRenderer.getMapRenderer().render(pose, graphics.bufferSource(), KingdomScreen.this.view.map().get(), data, true, 0xF000F0);
-                pose.popPose();
-                graphics.flush();
-                KingdomScreen.this.renderClaims(graphics, mapLeft, top);
+            // The kingdom map, on vanilla's map background. Clicking it opens the full map screen.
+            int mapLeft = this.mapLeft();
+            KingdomMapRenderer.drawMap(graphics, KingdomScreen.this.view, mapLeft, top, 1.0F);
+            boolean overHall = false;
+            if (KingdomMapRenderer.mapData(KingdomScreen.this.view).isPresent()) {
+                for (KingdomMapRenderer.Icon icon : KingdomMapRenderer.icons(KingdomScreen.this.view)) {
+                    int x = mapLeft + Math.round(icon.mapX());
+                    int y = top + Math.round(icon.mapY());
+                    KingdomMapRenderer.drawIcon(graphics, icon, x, y, KingdomMapRenderer.ICON_SIZE, false);
+                    overHall |= Math.abs(mouseX - x) <= 5 && Math.abs(mouseY - y) <= 5;
+                }
             }
             graphics.drawCenteredString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.map_scale",
                     KingdomScreen.this.view.mapScale(), 4), mapLeft + MAP_SIZE / 2, top + MAP_SIZE + 10, 0xA0A0A0);
-            if (mouseX >= mapLeft && mouseX < mapLeft + MAP_SIZE && mouseY >= top && mouseY < top + MAP_SIZE) {
-                graphics.renderTooltip(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.map_hint"), mouseX, mouseY);
+            if (overHall) {
+                graphics.renderTooltip(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.town_hall_of",
+                        KingdomScreen.this.coloredName()), mouseX, mouseY);
+            } else if (this.isOverMap(mouseX, mouseY)) {
+                graphics.renderComponentTooltip(KingdomScreen.this.font, List.of(
+                        Component.translatable("kingdoms.kingdom.screen.map_open"),
+                        Component.translatable("kingdoms.kingdom.screen.map_hint").withStyle(net.minecraft.ChatFormatting.GRAY)), mouseX, mouseY);
             }
+        }
+
+        int mapLeft() {
+            return this.centerX() + 10;
+        }
+
+        boolean isOverMap(double mouseX, double mouseY) {
+            int left = this.mapLeft();
+            int top = this.top();
+            return mouseX >= left && mouseX < left + MAP_SIZE && mouseY >= top && mouseY < top + MAP_SIZE;
         }
     }
 
-    /**
-     * Shades the kingdom's claimed chunks on the map in its colour, with an outline around the edge of its land.
-     * The map is centred on {@code mapCenterX/Z} and each map pixel covers {@code 2^scale} blocks.
-     */
-    private void renderClaims(GuiGraphics graphics, int mapLeft, int mapTop) {
-        Set<ChunkPos> claims = new HashSet<>(this.view.claims());
-        if (claims.isEmpty()) {
-            return;
-        }
-        int rgb = this.view.color().getTextColor() & 0xFFFFFF;
-        int fill = 0x55000000 | rgb;
-        int edge = 0xDD000000 | rgb;
-        int scale = 1 << this.view.mapScale();
-        float blocksPerPixel = scale;
-        // The block at the map's top-left pixel, worked out the same way vanilla fills a map in (MapItem#update).
-        float worldLeft = (this.view.mapCenterX() / scale - MAP_SIZE / 2) * scale;
-        float worldTop = (this.view.mapCenterZ() / scale - MAP_SIZE / 2) * scale;
-
-        graphics.enableScissor(mapLeft, mapTop, mapLeft + MAP_SIZE, mapTop + MAP_SIZE);
-        PoseStack pose = graphics.pose();
-        pose.pushPose();
-        pose.translate(0.0F, 0.0F, 2.0F); // above the map
-        for (ChunkPos chunk : claims) {
-            int x0 = mapLeft + Mth.floor((chunk.getMinBlockX() - worldLeft) / blocksPerPixel);
-            int z0 = mapTop + Mth.floor((chunk.getMinBlockZ() - worldTop) / blocksPerPixel);
-            int x1 = Math.max(x0 + 1, mapLeft + Mth.floor((chunk.getMaxBlockX() + 1 - worldLeft) / blocksPerPixel));
-            int z1 = Math.max(z0 + 1, mapTop + Mth.floor((chunk.getMaxBlockZ() + 1 - worldTop) / blocksPerPixel));
-            if (x1 < mapLeft || z1 < mapTop || x0 > mapLeft + MAP_SIZE || z0 > mapTop + MAP_SIZE) {
-                continue;
-            }
-            graphics.fill(x0, z0, x1, z1, fill);
-            // Outline only where the kingdom's land ends, so neighbouring claims read as one area.
-            if (!claims.contains(new ChunkPos(chunk.x, chunk.z - 1))) graphics.fill(x0, z0, x1, z0 + 1, edge);
-            if (!claims.contains(new ChunkPos(chunk.x, chunk.z + 1))) graphics.fill(x0, z1 - 1, x1, z1, edge);
-            if (!claims.contains(new ChunkPos(chunk.x - 1, chunk.z))) graphics.fill(x0, z0, x0 + 1, z1, edge);
-            if (!claims.contains(new ChunkPos(chunk.x + 1, chunk.z))) graphics.fill(x1 - 1, z0, x1, z1, edge);
-        }
-        pose.popPose();
-        graphics.disableScissor();
-    }
-
-    /** Everyone in the kingdom, and the ban list, with rank buttons and an invite box. */
+    /** Everyone in the kingdom, and the ban list, with rank buttons and a button to invite online players. */
     private final class MembersTab extends KingdomTab {
 
         private final MemberList list;
@@ -335,7 +352,6 @@ public class KingdomScreen extends Screen {
         private final Button kick;
         private final Button ban;
         private final Button unban;
-        private final EditBox inviteName;
         private final Button invite;
 
         MembersTab() {
@@ -346,15 +362,9 @@ public class KingdomScreen extends Screen {
             this.kick = this.add(this.memberButton("kingdoms.kingdom.screen.kick", Action.KICK));
             this.ban = this.add(this.memberButton("kingdoms.kingdom.screen.ban", Action.BAN));
             this.unban = this.add(this.memberButton("kingdoms.kingdom.screen.unban", Action.UNBAN));
-            this.inviteName = this.add(new EditBox(KingdomScreen.this.font, 0, 0, 120, 20, Component.translatable("kingdoms.kingdom.screen.invite_name")));
-            this.inviteName.setHint(Component.translatable("kingdoms.kingdom.screen.invite_name"));
-            this.inviteName.setMaxLength(16);
-            this.invite = this.add(Button.builder(Component.translatable("kingdoms.kingdom.screen.invite"), button -> {
-                if (!this.inviteName.getValue().isBlank()) {
-                    KingdomScreen.this.send(new KingdomActionPayload(Action.INVITE, java.util.Optional.empty(), this.inviteName.getValue().strip(), 0));
-                    this.inviteName.setValue("");
-                }
-            }).size(76, 20).build());
+            this.invite = this.add(Button.builder(Component.translatable("kingdoms.kingdom.screen.invite_players"),
+                    button -> Minecraft.getInstance().setScreen(new InvitePlayersScreen(KingdomScreen.this, KingdomScreen.this.view)))
+                    .size(220, 20).build());
             this.updateButtons();
         }
 
@@ -377,8 +387,7 @@ public class KingdomScreen extends Screen {
             for (int i = 0; i < buttons.length; i++) {
                 buttons[i].setPosition(buttonLeft, top + i * 24);
             }
-            this.inviteName.setPosition(listLeft, top + listHeight + 6);
-            this.invite.setPosition(listLeft + 124, top + listHeight + 6);
+            this.invite.setPosition(listLeft, top + listHeight + 6);
         }
 
         void updateButtons() {
@@ -395,7 +404,8 @@ public class KingdomScreen extends Screen {
             this.ban.active = KingdomScreen.this.isOfficer() && outranked;
             this.unban.active = KingdomScreen.this.isOfficer() && member != null && member.banned();
             this.invite.active = KingdomScreen.this.isOfficer();
-            this.inviteName.setEditable(KingdomScreen.this.isOfficer());
+            this.invite.setTooltip(KingdomScreen.this.isOfficer() ? null
+                    : Tooltip.create(Component.translatable("kingdoms.kingdom.screen.invite_players.officer_only")));
         }
 
         private final class MemberList extends ObjectSelectionList<MemberList.Entry> {
@@ -591,6 +601,197 @@ public class KingdomScreen extends Screen {
             if (!KingdomScreen.this.isLeader()) {
                 graphics.drawCenteredString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.leader_only"),
                         this.centerX(), this.top() + 64, 0xFF8080);
+            }
+        }
+    }
+
+    /**
+     * Every other kingdom and how this one stands with it: request, accept or end alliances, and declare or
+     * drop enemies. Officers and the leader can act; everyone else can look.
+     */
+    private final class DiplomacyTab extends KingdomTab {
+
+        private static final int LIST_WIDTH = 220;
+        private static final int BUTTON_WIDTH = 110;
+
+        private final KingdomList list;
+        private final Button alliance;
+        private final Button decline;
+        private final Button enemy;
+
+        DiplomacyTab() {
+            super("kingdoms.diplomacy.screen.title");
+            this.list = this.add(new KingdomList());
+            this.alliance = this.add(Button.builder(Component.translatable("kingdoms.diplomacy.screen.request"), button -> {
+                DiplomacyViewPayload.Entry entry = this.selected();
+                if (entry != null) {
+                    KingdomScreen.this.send(new DiplomacyActionPayload(allianceAction(entry), entry.id()));
+                }
+            }).size(BUTTON_WIDTH, 20).build());
+            this.decline = this.add(Button.builder(Component.translatable("kingdoms.diplomacy.screen.decline"), button -> {
+                DiplomacyViewPayload.Entry entry = this.selected();
+                if (entry != null) {
+                    KingdomScreen.this.send(new DiplomacyActionPayload(DiplomacyActionPayload.Action.DECLINE_ALLIANCE, entry.id()));
+                }
+            }).size(BUTTON_WIDTH, 20).build());
+            this.enemy = this.add(Button.builder(Component.translatable("kingdoms.diplomacy.screen.declare_enemy"), button -> {
+                DiplomacyViewPayload.Entry entry = this.selected();
+                if (entry != null) {
+                    KingdomScreen.this.send(new DiplomacyActionPayload(entry.weDeclaredEnemy()
+                            ? DiplomacyActionPayload.Action.MAKE_PEACE : DiplomacyActionPayload.Action.DECLARE_ENEMY, entry.id()));
+                }
+            }).size(BUTTON_WIDTH, 20).build());
+            this.updateButtons();
+        }
+
+        /** What the alliance button does for this kingdom right now. */
+        private static DiplomacyActionPayload.Action allianceAction(DiplomacyViewPayload.Entry entry) {
+            if (entry.allied()) return DiplomacyActionPayload.Action.END_ALLIANCE;
+            if (entry.requestReceived()) return DiplomacyActionPayload.Action.ACCEPT_ALLIANCE;
+            if (entry.requestSent()) return DiplomacyActionPayload.Action.CANCEL_REQUEST;
+            return DiplomacyActionPayload.Action.REQUEST_ALLIANCE;
+        }
+
+        private DiplomacyViewPayload.Entry selected() {
+            return diplomacyView.kingdoms().stream().filter(entry -> entry.id().equals(KingdomScreen.this.selectedKingdom))
+                    .findFirst().orElse(null);
+        }
+
+        @Override
+        protected void layout(int centerX, int top) {
+            int listLeft = centerX - (LIST_WIDTH + 8 + BUTTON_WIDTH) / 2;
+            int listHeight = Math.max(60, this.area.height() - 30);
+            this.list.setRectangle(LIST_WIDTH, listHeight, listLeft, top);
+            int buttonLeft = listLeft + LIST_WIDTH + 8;
+            this.alliance.setPosition(buttonLeft, top);
+            this.decline.setPosition(buttonLeft, top + 24);
+            this.enemy.setPosition(buttonLeft, top + 56);
+        }
+
+        void updateButtons() {
+            DiplomacyViewPayload.Entry entry = this.selected();
+            boolean canAct = diplomacyView.canManage() && entry != null;
+            DiplomacyActionPayload.Action action = entry == null ? DiplomacyActionPayload.Action.REQUEST_ALLIANCE : allianceAction(entry);
+            this.alliance.setMessage(Component.translatable(switch (action) {
+                case END_ALLIANCE -> "kingdoms.diplomacy.screen.end_alliance";
+                case ACCEPT_ALLIANCE -> "kingdoms.diplomacy.screen.accept";
+                case CANCEL_REQUEST -> "kingdoms.diplomacy.screen.cancel_request";
+                default -> "kingdoms.diplomacy.screen.request";
+            }));
+            // You can't ask a kingdom you've declared an enemy for an alliance: make peace first.
+            this.alliance.active = canAct && !(action == DiplomacyActionPayload.Action.REQUEST_ALLIANCE && entry.weDeclaredEnemy());
+            this.alliance.setTooltip(entry != null && action == DiplomacyActionPayload.Action.REQUEST_ALLIANCE && entry.weDeclaredEnemy()
+                    ? Tooltip.create(Component.translatable("kingdoms.diplomacy.screen.make_peace_first")) : null);
+            this.decline.visible = entry != null && entry.requestReceived();
+            this.decline.active = canAct;
+            boolean peace = entry != null && entry.weDeclaredEnemy();
+            this.enemy.setMessage(Component.translatable(peace ? "kingdoms.diplomacy.screen.make_peace" : "kingdoms.diplomacy.screen.declare_enemy"));
+            this.enemy.setTooltip(Tooltip.create(Component.translatable(peace ? "kingdoms.diplomacy.screen.make_peace.tooltip"
+                    : entry != null && entry.allied() ? "kingdoms.diplomacy.screen.declare_enemy.ally_tooltip"
+                    : "kingdoms.diplomacy.screen.declare_enemy.tooltip")));
+            this.enemy.active = canAct;
+        }
+
+        @Override
+        void renderExtras(GuiGraphics graphics, int mouseX, int mouseY) {
+            int listLeft = this.centerX() - (LIST_WIDTH + 8 + BUTTON_WIDTH) / 2;
+            int bottom = this.top() + Math.max(60, this.area.height() - 30);
+            if (diplomacyView.kingdoms().isEmpty()) {
+                graphics.drawCenteredString(KingdomScreen.this.font, Component.translatable("kingdoms.diplomacy.screen.no_kingdoms"),
+                        listLeft + LIST_WIDTH / 2, this.top() + 20, 0x808080);
+            }
+            DiplomacyViewPayload.Entry entry = this.selected();
+            if (entry != null) {
+                graphics.drawWordWrap(KingdomScreen.this.font, describe(entry), listLeft + LIST_WIDTH + 8, this.top() + 84, BUTTON_WIDTH, 0xA0A0A0);
+            }
+            if (!diplomacyView.canManage()) {
+                graphics.drawCenteredString(KingdomScreen.this.font, Component.translatable("kingdoms.diplomacy.screen.officers_only"),
+                        this.centerX(), bottom + 8, 0xFF8080);
+            }
+        }
+
+        /** A sentence on where things stand with this kingdom. */
+        private static Component describe(DiplomacyViewPayload.Entry entry) {
+            if (entry.allied()) return Component.translatable("kingdoms.diplomacy.screen.describe.allied");
+            if (entry.weDeclaredEnemy() && entry.theyDeclaredEnemy()) return Component.translatable("kingdoms.diplomacy.screen.describe.war");
+            if (entry.weDeclaredEnemy()) return Component.translatable("kingdoms.diplomacy.screen.describe.enemy");
+            if (entry.theyDeclaredEnemy()) return Component.translatable("kingdoms.diplomacy.screen.describe.hostile");
+            if (entry.requestReceived()) return Component.translatable("kingdoms.diplomacy.screen.describe.request_received");
+            if (entry.requestSent()) return Component.translatable("kingdoms.diplomacy.screen.describe.request_sent");
+            return Component.translatable("kingdoms.diplomacy.screen.describe.neutral");
+        }
+
+        /** The short label shown in the list, and its colour. */
+        private static Component label(DiplomacyViewPayload.Entry entry) {
+            if (entry.allied()) return Component.translatable("kingdoms.diplomacy.relation.ally").withColor(0x55FF55);
+            if (entry.weDeclaredEnemy() && entry.theyDeclaredEnemy()) return Component.translatable("kingdoms.diplomacy.relation.war").withColor(0xFF5555);
+            if (entry.weDeclaredEnemy()) return Component.translatable("kingdoms.diplomacy.relation.enemy").withColor(0xFF5555);
+            if (entry.theyDeclaredEnemy()) return Component.translatable("kingdoms.diplomacy.relation.hostile").withColor(0xFFAA00);
+            if (entry.requestReceived()) return Component.translatable("kingdoms.diplomacy.relation.request_received").withColor(0xFFFF55);
+            if (entry.requestSent()) return Component.translatable("kingdoms.diplomacy.relation.request_sent").withColor(0xC0C080);
+            return Component.translatable("kingdoms.diplomacy.relation.neutral").withColor(0xA0A0A0);
+        }
+
+        private final class KingdomList extends ObjectSelectionList<KingdomList.Entry> {
+
+            KingdomList() {
+                super(Minecraft.getInstance(), LIST_WIDTH, 100, 0, 16);
+                for (DiplomacyViewPayload.Entry kingdom : diplomacyView.kingdoms()) {
+                    Entry entry = new Entry(kingdom);
+                    this.addEntry(entry);
+                    if (kingdom.id().equals(KingdomScreen.this.selectedKingdom)) {
+                        this.setSelected(entry);
+                    }
+                }
+            }
+
+            @Override
+            public void setSelected(Entry entry) {
+                super.setSelected(entry);
+                KingdomScreen.this.selectedKingdom = entry == null ? null : entry.kingdom.id();
+                if (KingdomScreen.this.diplomacy != null) {
+                    KingdomScreen.this.diplomacy.updateButtons();
+                }
+            }
+
+            @Override
+            public int getRowWidth() {
+                return this.width - 12;
+            }
+
+            @Override
+            protected int getScrollbarPosition() {
+                return this.getX() + this.width - 6;
+            }
+
+            private final class Entry extends ObjectSelectionList.Entry<Entry> {
+
+                private final DiplomacyViewPayload.Entry kingdom;
+
+                Entry(DiplomacyViewPayload.Entry kingdom) {
+                    this.kingdom = kingdom;
+                }
+
+                @Override
+                public void render(GuiGraphics graphics, int index, int top, int left, int width, int height,
+                                   int mouseX, int mouseY, boolean hovering, float partialTick) {
+                    Component label = label(this.kingdom);
+                    int labelWidth = KingdomScreen.this.font.width(label);
+                    String name = KingdomScreen.this.font.plainSubstrByWidth(this.kingdom.name(), width - 12 - labelWidth);
+                    graphics.drawString(KingdomScreen.this.font, name, left + 2, top + 3, this.kingdom.color().getTextColor());
+                    graphics.drawString(KingdomScreen.this.font, label, left + width - 4 - labelWidth, top + 3, 0xFFFFFF);
+                }
+
+                @Override
+                public boolean mouseClicked(double mouseX, double mouseY, int button) {
+                    KingdomList.this.setSelected(this);
+                    return true;
+                }
+
+                @Override
+                public Component getNarration() {
+                    return Component.translatable("narrator.select", Component.literal(this.kingdom.name()).append(", ").append(label(this.kingdom)));
+                }
             }
         }
     }

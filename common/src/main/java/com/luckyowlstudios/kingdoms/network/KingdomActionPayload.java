@@ -13,8 +13,8 @@ import java.util.UUID;
 /**
  * Client to server: a button pressed in the Town Hall screen. The server checks the player's rank for each one.
  *
- * @param target the player acted on, for member actions
- * @param text   a player name, for {@link Action#INVITE}
+ * @param target the player acted on, for member actions and {@link Action#INVITE}
+ * @param text   the invited player's name, for {@link Action#INVITE} (used when there is no target)
  * @param value  a colour id, an inventory slot, or 0/1 for a setting
  */
 public record KingdomActionPayload(Action action, Optional<UUID> target, String text, int value) implements CustomPacketPayload {

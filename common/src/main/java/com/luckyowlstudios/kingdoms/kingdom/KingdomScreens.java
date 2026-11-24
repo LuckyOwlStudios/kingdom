@@ -58,6 +58,7 @@ public final class KingdomScreens {
         KingdomMaps.getOrCreate(player, kingdom);
         KingdomMaps.sendTo(player, kingdom);
         player.connection.send(new ClientboundCustomPayloadPacket(view(player, kingdom)));
+        Diplomacy.send(player, kingdom);
     }
 
     /** A button in the Town Hall screen. Every action re-checks the player's rank. */
@@ -85,7 +86,9 @@ public final class KingdomScreens {
                 if (target != null) Kingdoms.unban(player, target);
             }
             case INVITE -> {
-                ServerPlayer invited = player.server.getPlayerList().getPlayerByName(action.text().strip());
+                // The invite screen sends the player's id; a name still works for anything that only has that.
+                ServerPlayer invited = target != null ? player.server.getPlayerList().getPlayer(target)
+                        : player.server.getPlayerList().getPlayerByName(action.text().strip());
                 if (invited != null) {
                     Kingdoms.invite(player, invited);
                 } else {

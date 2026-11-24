@@ -1,11 +1,16 @@
 package com.luckyowlstudios.kingdoms;
 
+import com.luckyowlstudios.kingdoms.block.entity.TownHallBlockEntity;
 import com.luckyowlstudios.kingdoms.entity.GuideEntity;
+import com.luckyowlstudios.kingdoms.kingdom.Diplomacy;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomCommand;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomScreens;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomVillagers;
 import com.luckyowlstudios.kingdoms.kingdom.Kingdoms;
+import com.luckyowlstudios.kingdoms.network.CloseTownHallPayload;
 import com.luckyowlstudios.kingdoms.network.CreateKingdomPayload;
+import com.luckyowlstudios.kingdoms.network.DiplomacyActionPayload;
+import com.luckyowlstudios.kingdoms.network.DiplomacyViewPayload;
 import com.luckyowlstudios.kingdoms.network.KingdomActionPayload;
 import com.luckyowlstudios.kingdoms.network.KingdomViewPayload;
 import com.luckyowlstudios.kingdoms.network.OpenCreateKingdomPayload;
@@ -43,9 +48,16 @@ public class KingdomsFabric implements ModInitializer {
         PayloadTypeRegistry.playC2S().register(CreateKingdomPayload.TYPE, CreateKingdomPayload.STREAM_CODEC);
         PayloadTypeRegistry.playS2C().register(KingdomViewPayload.TYPE, KingdomViewPayload.STREAM_CODEC);
         PayloadTypeRegistry.playC2S().register(KingdomActionPayload.TYPE, KingdomActionPayload.STREAM_CODEC);
+        PayloadTypeRegistry.playC2S().register(CloseTownHallPayload.TYPE, CloseTownHallPayload.STREAM_CODEC);
         ServerPlayNetworking.registerGlobalReceiver(KingdomActionPayload.TYPE,
                 (payload, context) -> KingdomScreens.handle(context.player(), payload));
+        PayloadTypeRegistry.playS2C().register(DiplomacyViewPayload.TYPE, DiplomacyViewPayload.STREAM_CODEC);
+        PayloadTypeRegistry.playC2S().register(DiplomacyActionPayload.TYPE, DiplomacyActionPayload.STREAM_CODEC);
+        ServerPlayNetworking.registerGlobalReceiver(DiplomacyActionPayload.TYPE,
+                (payload, context) -> Diplomacy.handle(context.player(), payload));
         ServerPlayNetworking.registerGlobalReceiver(CreateKingdomPayload.TYPE,
                 (payload, context) -> Kingdoms.tryCreate(context.player(), payload));
+        ServerPlayNetworking.registerGlobalReceiver(CloseTownHallPayload.TYPE,
+                (payload, context) -> TownHallBlockEntity.onScreenClosed(context.player(), payload.townHall()));
     }
 }
