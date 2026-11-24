@@ -53,9 +53,14 @@ public final class KingdomCommand {
                                 .executes(KingdomCommand::kick)))
                 .then(Commands.literal("leave")
                         .executes(context -> result(Kingdoms.leave(context.getSource().getPlayerOrException()))))
-                .then(Commands.literal("levelup")
-                        .executes(context -> result(Kingdoms.levelUp(context.getSource().getPlayerOrException()))))
-                // Operators: set a kingdom's level outright, for testing or running a server.
+                // Operators: give a kingdom XP or set its level outright, for testing or running a server.
+                .then(Commands.literal("addxp").requires(source -> source.hasPermission(2))
+                        .then(Commands.argument("amount", IntegerArgumentType.integer(1))
+                                .executes(context -> addXp(context.getSource(), IntegerArgumentType.getInteger(context, "amount"),
+                                        Kingdoms.ofPlayer(context.getSource().getPlayerOrException())))
+                                .then(Commands.argument("kingdom", StringArgumentType.greedyString()).suggests(KINGDOMS)
+                                        .executes(context -> addXp(context.getSource(), IntegerArgumentType.getInteger(context, "amount"),
+                                                KingdomData.get(context.getSource().getServer()).byName(StringArgumentType.getString(context, "kingdom")))))))
                 .then(Commands.literal("setlevel").requires(source -> source.hasPermission(2))
                         .then(Commands.argument("level", IntegerArgumentType.integer(1, KingdomLevel.MAX_LEVEL))
                                 .executes(context -> setLevel(context.getSource(), IntegerArgumentType.getInteger(context, "level"),
@@ -78,6 +83,16 @@ public final class KingdomCommand {
         }
         Kingdoms.setLevel(source.getServer(), kingdom.get(), level);
         source.sendSuccess(() -> Component.translatable("kingdoms.kingdom.level.set", kingdom.get().displayName(), level), true);
+        return 1;
+    }
+
+    private static int addXp(CommandSourceStack source, int amount, Optional<Kingdom> kingdom) {
+        if (kingdom.isEmpty()) {
+            source.sendFailure(Component.translatable("kingdoms.kingdom.not_found"));
+            return 0;
+        }
+        KingdomXp.add(source.getServer(), kingdom.get(), amount);
+        source.sendSuccess(() -> Component.translatable("kingdoms.kingdom.xp.added", amount, kingdom.get().displayName()), true);
         return 1;
     }
 

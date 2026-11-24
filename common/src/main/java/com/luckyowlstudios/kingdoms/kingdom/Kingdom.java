@@ -47,7 +47,7 @@ public final class Kingdom {
             Settings.CODEC.optionalFieldOf("settings", Settings.DEFAULT).forGetter(Kingdom::settings),
             MapId.CODEC.optionalFieldOf("map").forGetter(Kingdom::map),
             ChunkClaim.CODEC.listOf().optionalFieldOf("claims", List.of()).forGetter(kingdom -> List.copyOf(kingdom.claims)),
-            Growth.MAP_CODEC.forGetter(kingdom -> new Growth(kingdom.level, List.copyOf(kingdom.residents), Map.copyOf(kingdom.perks), kingdom.taxes))
+            Growth.MAP_CODEC.forGetter(kingdom -> new Growth(kingdom.level, List.copyOf(kingdom.residents), Map.copyOf(kingdom.perks), kingdom.taxes, kingdom.xp))
     ).apply(instance, (id, name, color, founder, leader, members, invites, townHall, banner, officers, banned, settings, map, claims, growth) -> {
         Kingdom kingdom = new Kingdom(id, name, color, founder, leader.orElse(founder), new LinkedHashSet<>(members), townHall.orElse(null));
         kingdom.invites.addAll(invites);
@@ -63,6 +63,7 @@ public final class Kingdom {
             if (tier > 0) kingdom.perks.put(perk, tier);
         });
         kingdom.taxes = Math.max(0, growth.taxes());
+        kingdom.xp = Math.max(0, growth.xp());
         return kingdom;
     }));
 
@@ -71,12 +72,13 @@ public final class Kingdom {
      * {@code perks}, {@code taxes}) but grouped so the kingdom codec stays under the 16-field limit. Add new saved
      * fields here too.
      */
-    private record Growth(int level, List<UUID> residents, Map<ResourceLocation, Integer> perks, int taxes) {
+    private record Growth(int level, List<UUID> residents, Map<ResourceLocation, Integer> perks, int taxes, int xp) {
         static final com.mojang.serialization.MapCodec<Growth> MAP_CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
                 Codec.INT.optionalFieldOf("level", 1).forGetter(Growth::level),
                 UUIDUtil.CODEC.listOf().optionalFieldOf("residents", List.of()).forGetter(Growth::residents),
                 Codec.unboundedMap(ResourceLocation.CODEC, Codec.INT).optionalFieldOf("perks", Map.of()).forGetter(Growth::perks),
-                Codec.INT.optionalFieldOf("taxes", 0).forGetter(Growth::taxes)
+                Codec.INT.optionalFieldOf("taxes", 0).forGetter(Growth::taxes),
+                Codec.INT.optionalFieldOf("xp", 0).forGetter(Growth::xp)
         ).apply(instance, Growth::new));
     }
 
@@ -114,6 +116,7 @@ public final class Kingdom {
     private final Set<UUID> residents = new LinkedHashSet<>();
     private final Map<ResourceLocation, Integer> perks = new LinkedHashMap<>();
     private int taxes;
+    private int xp;
 
     Kingdom(UUID id, String name, DyeColor color, UUID founder, UUID leader, Set<UUID> members, GlobalPos townHall) {
         this.id = id;
@@ -224,6 +227,11 @@ public final class Kingdom {
         return this.perks.getOrDefault(perk, 0);
     }
 
+    /** Kingdom XP earned toward the next level. Starts again from 0 at each level, and stays 0 at the top level. */
+    public int xp() {
+        return this.xp;
+    }
+
     /** Emeralds waiting in the Town Hall's treasury, from the Tax Collector perk. */
     public int taxes() {
         return this.taxes;
@@ -303,6 +311,10 @@ public final class Kingdom {
 
     void setPerkTier(ResourceLocation perk, int tier) {
         this.perks.put(perk, tier);
+    }
+
+    void setXp(int xp) {
+        this.xp = Math.max(0, xp);
     }
 
     void setTaxes(int taxes) {

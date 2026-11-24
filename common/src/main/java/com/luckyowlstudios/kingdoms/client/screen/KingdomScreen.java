@@ -244,32 +244,58 @@ public class KingdomScreen extends Screen {
     /** Name, colour, banner, leader, and the kingdom map. */
     private final class OverviewTab extends KingdomTab {
 
-        private final Button levelUp;
+        /** Room at the top of the tab for the level bar; everything else sits below it. */
+        private static final int BAR_SPACE = 24;
+        private static final ResourceLocation XP_BAR_BACKGROUND = ResourceLocation.withDefaultNamespace("hud/experience_bar_background");
+        private static final ResourceLocation XP_BAR_PROGRESS = ResourceLocation.withDefaultNamespace("hud/experience_bar_progress");
+        private static final int XP_BAR_WIDTH = 182;
+        private static final int XP_BAR_HEIGHT = 5;
+
         private final Button leave;
 
         OverviewTab() {
             super("kingdoms.kingdom.screen.overview");
-            KingdomViewPayload.Growth growth = KingdomScreen.this.view.growth();
-            this.levelUp = this.add(Button.builder(Component.translatable("kingdoms.kingdom.screen.level_up"),
-                    button -> KingdomScreen.this.send(KingdomActionPayload.of(Action.LEVEL_UP))).size(78, 20).build());
-            this.levelUp.active = KingdomScreen.this.isLeader() && !growth.isMax();
-            this.levelUp.setTooltip(Tooltip.create(growth.isMax()
-                    ? Component.translatable("kingdoms.kingdom.screen.level_up.max")
-                    : KingdomScreen.this.isLeader()
-                    ? Component.translatable("kingdoms.kingdom.screen.level_up.cost", growth.levelUpCost(), growth.level() + 1)
-                    : Component.translatable("kingdoms.kingdom.screen.leader_only")));
             this.leave = this.add(Button.builder(Component.translatable("kingdoms.kingdom.screen.leave"),
                     button -> {
                         KingdomScreen.this.send(KingdomActionPayload.of(Action.LEAVE));
                         KingdomScreen.this.onClose();
-                    }).size(78, 20).build());
+                    }).size(120, 20).build());
+        }
+
+        @Override
+        protected int top() {
+            return super.top() + BAR_SPACE;
         }
 
         @Override
         protected void layout(int centerX, int top) {
-            int left = centerX - 10 - 160;
-            this.levelUp.setPosition(left, top + 120);
-            this.leave.setPosition(left + 82, top + 120);
+            this.leave.setPosition(centerX - 10 - 160, top + BAR_SPACE + 120);
+        }
+
+        /**
+         * The kingdom's level and its XP toward the next one, drawn with vanilla's experience bar, centred over the
+         * tab's contents (the info column and the map).
+         */
+        private void renderLevelBar(GuiGraphics graphics, int mouseX, int mouseY) {
+            KingdomViewPayload.Growth growth = KingdomScreen.this.view.growth();
+            int center = (this.centerX() - 10 - 160 + this.mapLeft() + MAP_SIZE) / 2;
+            int labelTop = super.top() - 2;
+            Component label = growth.isMax()
+                    ? Component.translatable("kingdoms.kingdom.screen.level_bar.max", growth.level())
+                    : Component.translatable("kingdoms.kingdom.screen.level_bar", growth.level(), growth.xp(), growth.xpToNext());
+            graphics.drawCenteredString(KingdomScreen.this.font, label, center, labelTop, 0x80FF20);
+            int barLeft = center - XP_BAR_WIDTH / 2;
+            int barTop = labelTop + 11;
+            graphics.blitSprite(XP_BAR_BACKGROUND, barLeft, barTop, XP_BAR_WIDTH, XP_BAR_HEIGHT);
+            int filled = growth.isMax() ? XP_BAR_WIDTH
+                    : growth.xpToNext() <= 0 ? 0 : (int) ((long) XP_BAR_WIDTH * Math.min(growth.xp(), growth.xpToNext()) / growth.xpToNext());
+            if (filled > 0) {
+                graphics.blitSprite(XP_BAR_PROGRESS, XP_BAR_WIDTH, XP_BAR_HEIGHT, 0, 0, barLeft, barTop, filled, XP_BAR_HEIGHT);
+            }
+            if (mouseX >= barLeft && mouseX < barLeft + XP_BAR_WIDTH && mouseY >= labelTop && mouseY < barTop + XP_BAR_HEIGHT) {
+                graphics.renderTooltip(KingdomScreen.this.font, KingdomScreen.this.font.split(
+                        Component.translatable("kingdoms.kingdom.screen.level_bar.tooltip"), 200), mouseX, mouseY);
+            }
         }
 
         @Override
@@ -277,6 +303,7 @@ public class KingdomScreen extends Screen {
             int centerX = this.centerX();
             int top = this.top();
             int left = centerX - 10 - 160;
+            this.renderLevelBar(graphics, mouseX, mouseY);
 
             // Banner, drawn as a big item like vanilla's loom preview.
             ItemStack banner = KingdomScreen.this.view.banner();
@@ -306,12 +333,10 @@ public class KingdomScreen extends Screen {
             graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.your_rank",
                     Component.translatable(KingdomScreen.this.view.viewerRank().translationKey())), left, top + 62, 0xA0A0A0);
             KingdomViewPayload.Growth growth = KingdomScreen.this.view.growth();
-            graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.level",
-                    growth.level(), growth.maxLevel()), left, top + 78, 0xFFD700);
             graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.villagers",
-                    growth.villagers(), growth.villagerCap()), left, top + 90, 0xA0A0A0);
+                    growth.villagers(), growth.villagerCap()), left, top + 78, 0xA0A0A0);
             graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.land",
-                    KingdomScreen.this.view.claimCount(), growth.landCap()), left, top + 102, 0xA0A0A0);
+                    KingdomScreen.this.view.claimCount(), growth.landCap()), left, top + 90, 0xA0A0A0);
 
             // The kingdom map, on vanilla's map background. Clicking it opens the full map screen.
             int mapLeft = this.mapLeft();

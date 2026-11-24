@@ -52,13 +52,14 @@ public record KingdomViewPayload(BlockPos townHall, String name, DyeColor color,
      * @param villagers    villagers living in the kingdom
      * @param villagerCap  how many the level allows
      * @param landCap      how many chunks the level allows
-     * @param levelUpCost  emeralds needed for the next level, or 0 at the top level
+     * @param xp           kingdom XP earned toward the next level
+     * @param xpToNext     XP the next level takes, or 0 at the top level
      * @param perkPoints   perk points the kingdom has left to spend
      * @param perks        the tier the kingdom has of each perk it has unlocked
      * @param taxes        emeralds waiting in the Town Hall's treasury
      * @param taxCap       how many the treasury holds (0 without the Tax Collector perk)
      */
-    public record Growth(int level, int maxLevel, int villagers, int villagerCap, int landCap, int levelUpCost,
+    public record Growth(int level, int maxLevel, int villagers, int villagerCap, int landCap, int xp, int xpToNext,
                          int perkPoints, Map<ResourceLocation, Integer> perks, int taxes, int taxCap) {
         private static final StreamCodec<io.netty.buffer.ByteBuf, Map<ResourceLocation, Integer>> PERKS_CODEC =
                 ByteBufCodecs.map(HashMap::new, ResourceLocation.STREAM_CODEC, ByteBufCodecs.VAR_INT);
@@ -76,14 +77,15 @@ public record KingdomViewPayload(BlockPos townHall, String name, DyeColor color,
                     buf.writeVarInt(growth.villagers);
                     buf.writeVarInt(growth.villagerCap);
                     buf.writeVarInt(growth.landCap);
-                    buf.writeVarInt(growth.levelUpCost);
+                    buf.writeVarInt(growth.xp);
+                    buf.writeVarInt(growth.xpToNext);
                     buf.writeVarInt(growth.perkPoints);
                     PERKS_CODEC.encode(buf, growth.perks);
                     buf.writeVarInt(growth.taxes);
                     buf.writeVarInt(growth.taxCap);
                 },
                 buf -> new Growth(buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(),
-                        buf.readVarInt(), buf.readVarInt(), PERKS_CODEC.decode(buf), buf.readVarInt(), buf.readVarInt()));
+                        buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), PERKS_CODEC.decode(buf), buf.readVarInt(), buf.readVarInt()));
 
         public boolean isMax() {
             return this.level >= this.maxLevel;
