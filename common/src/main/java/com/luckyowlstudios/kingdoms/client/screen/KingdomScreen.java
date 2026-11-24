@@ -159,6 +159,13 @@ public class KingdomScreen extends Screen {
         }
     }
 
+    /** Vanilla's menu blur plus a dark tint, so the kingdom UI stands out from the world behind it. */
+    @Override
+    public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        super.renderBackground(graphics, mouseX, mouseY, partialTick);
+        this.renderTransparentBackground(graphics);
+    }
+
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
