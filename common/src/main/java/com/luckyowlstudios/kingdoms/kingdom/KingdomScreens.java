@@ -44,15 +44,15 @@ public final class KingdomScreens {
                 map.map(data -> data.centerX).orElse(hall.getX()), map.map(data -> data.centerZ).orElse(hall.getZ()),
                 claims, kingdom.claims().size(),
                 kingdom.settings().inviteOnly(), kingdom.settings().friendlyFire(),
-                kingdom.rank(viewer.getUUID()), members, growth(kingdom));
+                kingdom.rank(viewer.getUUID()), members, growth(viewer.server, kingdom));
     }
 
-    private static KingdomViewPayload.Growth growth(Kingdom kingdom) {
+    private static KingdomViewPayload.Growth growth(net.minecraft.server.MinecraftServer server, Kingdom kingdom) {
         KingdomLevel level = kingdom.levelInfo();
         int cost = level.isMax() ? 0 : KingdomLevel.of(level.level() + 1).cost();
         return new KingdomViewPayload.Growth(level.level(), KingdomLevel.MAX_LEVEL, kingdom.residents().size(),
                 level.villagerCap(), level.landCap(), cost, KingdomPerks.availablePoints(kingdom), Map.copyOf(kingdom.perks()),
-                kingdom.taxes(), TaxCollector.treasuryCap(viewer.server, kingdom));
+                kingdom.taxes(), TaxCollector.treasuryCap(server, kingdom));
     }
 
     /** Opens (or refreshes) the Town Hall screen for a member. */
