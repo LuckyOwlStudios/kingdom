@@ -2,6 +2,7 @@ package com.luckyowlstudios.kingdoms.client.screen;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomRank;
+import com.luckyowlstudios.kingdoms.network.CloseTownHallPayload;
 import com.luckyowlstudios.kingdoms.network.KingdomActionPayload;
 import com.luckyowlstudios.kingdoms.network.KingdomActionPayload.Action;
 import com.luckyowlstudios.kingdoms.network.KingdomViewPayload;
@@ -153,6 +154,15 @@ public class KingdomScreen extends Screen {
     @Override
     public boolean isPauseScreen() {
         return false;
+    }
+
+    /** Closed (or replaced by another screen): let the server close the book on the Town Hall. */
+    @Override
+    public void removed() {
+        super.removed();
+        if (this.minecraft != null && this.minecraft.getConnection() != null) {
+            this.minecraft.getConnection().send(new ServerboundCustomPayloadPacket(new CloseTownHallPayload(this.view.townHall())));
+        }
     }
 
     // ---- Tabs ----

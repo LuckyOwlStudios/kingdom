@@ -2,6 +2,7 @@ package com.luckyowlstudios.kingdoms.kingdom;
 
 import com.mojang.serialization.Codec;
 import com.luckyowlstudios.kingdoms.Constants;
+import com.luckyowlstudios.kingdoms.block.entity.TownHallBlockEntity;
 import net.minecraft.core.GlobalPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
@@ -107,6 +108,7 @@ public final class KingdomData extends SavedData {
         this.claim(kingdom, ChunkClaim.of(townHall));
         this.setDirty();
         KingdomTeams.sync(server, kingdom);
+        TownHallBlockEntity.refresh(server, townHall);
         return kingdom;
     }
 
@@ -139,6 +141,8 @@ public final class KingdomData extends SavedData {
             kingdom.mutableClaims().forEach(chunk -> this.claimOwners.remove(chunk, kingdom.id()));
             kingdom.mutableClaims().clear();
             KingdomTeams.remove(server, kingdom);
+            // Its Town Hall is free again: put the book away and take the colours down.
+            kingdom.townHall().ifPresent(hall -> TownHallBlockEntity.refresh(server, hall));
             return true;
         }
         kingdom.mutableOfficers().remove(player);
@@ -186,6 +190,7 @@ public final class KingdomData extends SavedData {
         kingdom.setColor(color);
         this.setDirty();
         KingdomTeams.sync(server, kingdom);
+        kingdom.townHall().ifPresent(hall -> TownHallBlockEntity.refresh(server, hall));
     }
 
     void setSettings(MinecraftServer server, Kingdom kingdom, Kingdom.Settings settings) {

@@ -1,10 +1,12 @@
 package com.luckyowlstudios.kingdoms;
 
+import com.luckyowlstudios.kingdoms.block.entity.TownHallBlockEntity;
 import com.luckyowlstudios.kingdoms.client.KingdomsClient;
 import com.luckyowlstudios.kingdoms.entity.GuideEntity;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomCommand;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomScreens;
 import com.luckyowlstudios.kingdoms.kingdom.Kingdoms;
+import com.luckyowlstudios.kingdoms.network.CloseTownHallPayload;
 import com.luckyowlstudios.kingdoms.network.CreateKingdomPayload;
 import com.luckyowlstudios.kingdoms.network.KingdomActionPayload;
 import com.luckyowlstudios.kingdoms.network.KingdomViewPayload;
@@ -59,6 +61,8 @@ public class KingdomsNeoForge {
                 (payload, context) -> KingdomsClient.handle(payload));
         registrar.playToServer(KingdomActionPayload.TYPE, KingdomActionPayload.STREAM_CODEC,
                 (payload, context) -> KingdomScreens.handle((ServerPlayer) context.player(), payload));
+        registrar.playToServer(CloseTownHallPayload.TYPE, CloseTownHallPayload.STREAM_CODEC,
+                (payload, context) -> TownHallBlockEntity.onScreenClosed((ServerPlayer) context.player(), payload.townHall()));
     }
 
     private static void registerCommands(RegisterCommandsEvent event) {
