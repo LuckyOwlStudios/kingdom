@@ -254,7 +254,7 @@ public class KingdomsGameTests implements FabricGameTest {
         helper.succeed();
     }
 
-    @GameTest(template = EMPTY_STRUCTURE)
+    @GameTest(template = EMPTY_STRUCTURE, timeoutTicks = 400)
     public void levellingUpGrowsVillagersAndLand(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         BlockPos hall = isolatedHall(helper);
@@ -282,32 +282,56 @@ public class KingdomsGameTests implements FabricGameTest {
         helper.assertTrue(view.growth().level() == 2 && view.growth().landCap() == KingdomLevel.of(2).landCap()
                 && view.growth().villagerCap() == KingdomLevel.of(2).villagerCap(), "screen got the wrong caps: " + view.growth());
 
-        // Villagers move in one per morning up to the cap.
-        int cap = kingdom.levelInfo().villagerCap();
-        for (int i = 0; i < cap; i++) {
-            Villager villager = KingdomVillagers.morning(level.getServer(), kingdom).orElseThrow();
-            helper.assertTrue(villager.getTags().contains(KingdomVillagers.RESIDENT_TAG), "new villager isn't tied to the kingdom");
-            helper.assertTrue(villager.distanceToSqr(hall.getCenter()) < 16 * 16, "villager arrived too far from the town hall");
+        // Villagers only move in while the Town Hall is loaded; nobody is near this one.
+        helper.assertTrue(KingdomVillagers.morning(level.getServer(), kingdom).isEmpty(), "a villager moved into an unloaded kingdom");
+        // Keep the hall and the chunks around it loaded, the way a nearby player would.
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                level.setChunkForced(center.x() + dx, center.z() + dz, true);
+            }
         }
-        helper.assertTrue(kingdom.residents().size() == cap, "should have " + cap + " villagers, got " + kingdom.residents().size());
-        helper.assertTrue(KingdomVillagers.morning(level.getServer(), kingdom).isEmpty(), "a villager moved in past the cap");
+        // Forcing a chunk takes a few ticks to reach entity ticking.
+        helper.startSequence().thenWaitUntil(() -> {
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    helper.assertTrue(level.isPositionEntityTicking(new net.minecraft.world.level.ChunkPos(center.x() + dx, center.z() + dz).getMiddleBlockPosition(hall.getY())),
+                            "forced chunks aren't loaded yet");
+                }
+            }
+        }).thenExecute(() -> {
+            // Villagers move in one per morning up to the cap.
+            int cap = kingdom.levelInfo().villagerCap();
+            for (int i = 0; i < cap; i++) {
+                Villager villager = KingdomVillagers.morning(level.getServer(), kingdom).orElseThrow(
+                        () -> new net.minecraft.gametest.framework.GameTestAssertException("no villager moved in"));
+                helper.assertTrue(villager.getTags().contains(KingdomVillagers.RESIDENT_TAG), "new villager isn't tied to the kingdom");
+                helper.assertTrue(villager.distanceToSqr(hall.getCenter()) < 16 * 16, "villager arrived too far from the town hall");
+            }
+            helper.assertTrue(kingdom.residents().size() == cap, "should have " + cap + " villagers, got " + kingdom.residents().size());
+            helper.assertTrue(KingdomVillagers.morning(level.getServer(), kingdom).isEmpty(), "a villager moved in past the cap");
 
-        // One dies: there's room again.
-        java.util.UUID first = kingdom.residents().iterator().next();
-        net.minecraft.world.entity.Entity resident = level.getEntity(first);
-        helper.assertTrue(resident != null, "resident villager isn't in the world");
-        resident.remove(net.minecraft.world.entity.Entity.RemovalReason.KILLED);
-        helper.assertTrue(kingdom.residents().size() == cap - 1 && !kingdom.residents().contains(first), "dead villager still counts");
-        helper.assertTrue(KingdomVillagers.morning(level.getServer(), kingdom).isPresent(), "no villager moved in after one died");
+            // One dies: there's room again.
+            java.util.UUID first = kingdom.residents().iterator().next();
+            net.minecraft.world.entity.Entity resident = level.getEntity(first);
+            helper.assertTrue(resident != null, "resident villager isn't in the world");
+            resident.remove(net.minecraft.world.entity.Entity.RemovalReason.KILLED);
+            helper.assertTrue(kingdom.residents().size() == cap - 1 && !kingdom.residents().contains(first), "dead villager still counts");
+            helper.assertTrue(KingdomVillagers.morning(level.getServer(), kingdom).isPresent(), "no villager moved in after one died");
 
-        // Lowering the level (operator command) shrinks the land back.
-        Kingdoms.setLevel(level.getServer(), kingdom, 1);
-        helper.assertTrue(kingdom.claims().equals(java.util.Set.of(center)), "land didn't shrink back to the hall's chunk");
-        helper.assertTrue(KingdomData.get(level.getServer()).claimedBy(corner).isEmpty(), "released chunk is still claimed");
+            // Lowering the level (operator command) shrinks the land back.
+            Kingdoms.setLevel(level.getServer(), kingdom, 1);
+            helper.assertTrue(kingdom.claims().equals(java.util.Set.of(center)), "land didn't shrink back to the hall's chunk");
+            helper.assertTrue(KingdomData.get(level.getServer()).claimedBy(corner).isEmpty(), "released chunk is still claimed");
 
-        Kingdoms.leave(leader);
-        java.util.List.copyOf(kingdom.residents()).forEach(id -> java.util.Optional.ofNullable(level.getEntity(id)).ifPresent(net.minecraft.world.entity.Entity::discard));
-        helper.succeed();
+            java.util.List.copyOf(kingdom.residents()).forEach(id -> java.util.Optional.ofNullable(level.getEntity(id))
+                    .ifPresent(net.minecraft.world.entity.Entity::discard));
+            Kingdoms.leave(leader);
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    level.setChunkForced(center.x() + dx, center.z() + dz, false);
+                }
+            }
+        }).thenSucceed();
     }
 
     @GameTest(template = EMPTY_STRUCTURE)

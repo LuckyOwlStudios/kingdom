@@ -18,7 +18,8 @@ import java.util.Optional;
 /**
  * Villagers moving into kingdoms. Every morning (when the overworld's day count goes up, so sleeping through the
  * night counts too) each kingdom with a Town Hall and room under its level's villager cap gets one new villager,
- * who appears near the hall. Server side only.
+ * who appears near the hall. The hall has to be loaded (a player nearby), the same way vanilla villages only grow
+ * while loaded. Server side only.
  */
 public final class KingdomVillagers {
 
@@ -66,7 +67,8 @@ public final class KingdomVillagers {
         }
         GlobalPos hall = kingdom.townHall().get();
         ServerLevel world = server.getLevel(hall.dimension());
-        if (world == null) {
+        // Like a village, a kingdom only grows while someone is around to keep it loaded.
+        if (world == null || !world.isPositionEntityTicking(hall.pos())) {
             return Optional.empty();
         }
         Villager villager = EntityType.VILLAGER.create(world);
@@ -96,7 +98,7 @@ public final class KingdomVillagers {
             }
             int y = world.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
             BlockPos pos = new BlockPos(x, y, z);
-            if (Math.abs(y - hall.getY()) <= 8 && world.getFluidState(pos.below()).isEmpty()
+            if (world.isPositionEntityTicking(pos) && Math.abs(y - hall.getY()) <= 8 && world.getFluidState(pos.below()).isEmpty()
                     && world.noCollision(EntityType.VILLAGER.getSpawnAABB(x + 0.5, y, z + 0.5))) {
                 return pos;
             }
