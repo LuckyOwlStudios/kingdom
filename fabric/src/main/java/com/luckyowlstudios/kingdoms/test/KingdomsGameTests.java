@@ -733,4 +733,34 @@ public class KingdomsGameTests implements FabricGameTest {
         Kingdoms.leave(leader);
         helper.succeed();
     }
+
+    @GameTest(template = EMPTY_STRUCTURE)
+    public void townHallAdvisorJoinsTheKingdom(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos hall = isolatedHall(helper);
+        ServerPlayer leader = helper.makeMockServerPlayerInLevel();
+        leader.moveTo(hall.getX() + 1.5, hall.getY(), hall.getZ() + 0.5);
+        Kingdom kingdom = Kingdoms.tryCreate(leader, new CreateKingdomPayload(hall, "Advisorton " + level.getGameTime(), DyeColor.CYAN)).orElseThrow();
+
+        Villager villager = EntityType.VILLAGER.create(level);
+        villager.moveTo(hall.getX() + 1.5, hall.getY(), hall.getZ() + 0.5);
+        level.addFreshEntity(villager);
+        // An unemployed villager doesn't join, even with the hall as its job site.
+        villager.getBrain().setMemory(net.minecraft.world.entity.ai.memory.MemoryModuleType.JOB_SITE, GlobalPos.of(level.dimension(), hall));
+        helper.assertFalse(KingdomVillagers.checkAdvisor(villager), "a villager without the Advisor job joined");
+
+        // Taking the Town Hall job makes it a resident, counted toward the cap.
+        villager.setVillagerData(villager.getVillagerData().setProfession(ModVillagers.ADVISOR_PROFESSION.get()));
+        helper.assertTrue(KingdomVillagers.checkAdvisor(villager), "the Advisor didn't join the kingdom");
+        helper.assertTrue(kingdom.residents().contains(villager.getUUID()) && villager.getTags().contains(KingdomVillagers.RESIDENT_TAG),
+                "the Advisor isn't a resident");
+        helper.assertFalse(KingdomVillagers.checkAdvisor(villager), "the Advisor joined twice");
+        var view = KingdomScreens.view(leader, kingdom);
+        helper.assertTrue(view.growth().villagers() == 1, "the Advisor doesn't count toward the villagers, got " + view.growth().villagers());
+
+        villager.discard();
+        helper.assertTrue(kingdom.residents().isEmpty(), "a removed Advisor still counts");
+        Kingdoms.leave(leader);
+        helper.succeed();
+    }
 }

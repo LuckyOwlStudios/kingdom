@@ -1,5 +1,6 @@
 package com.luckyowlstudios.kingdoms.kingdom;
 
+import com.luckyowlstudios.kingdoms.registry.ModVillagers;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.GlobalPos;
 import net.minecraft.network.chat.Component;
@@ -9,6 +10,7 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobSpawnType;
+import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.level.levelgen.Heightmap;
 
@@ -37,6 +39,7 @@ public final class KingdomVillagers {
     public static void tick(MinecraftServer server) {
         KingdomCelebration.tick(server);
         KingdomResearch.tick(server);
+        Watchtowers.tick(server);
         if (server.getTickCount() % 20 != 0) {
             return;
         }
@@ -109,6 +112,37 @@ public final class KingdomVillagers {
             }
         }
         return hall.above();
+    }
+
+    /**
+     * The villager who works at a Town Hall (the Advisor) belongs to that hall's kingdom. Called now and then for
+     * every Advisor, so it also catches ones who took the job before the kingdom was founded. The Advisor joins even
+     * if the kingdom is at its villager cap, and counts toward it from then on. A villager from another kingdom
+     * moves over.
+     *
+     * @return true if the villager just joined
+     */
+    public static boolean checkAdvisor(Villager villager) {
+        if (!(villager.level() instanceof ServerLevel world)
+                || villager.getVillagerData().getProfession() != ModVillagers.ADVISOR_PROFESSION.get()) {
+            return false;
+        }
+        Optional<GlobalPos> site = villager.getBrain().getMemory(MemoryModuleType.JOB_SITE);
+        if (site.isEmpty()) {
+            return false;
+        }
+        KingdomData data = KingdomData.get(world.getServer());
+        Optional<Kingdom> found = data.atTownHall(site.get());
+        if (found.isEmpty() || found.get().residents().contains(villager.getUUID())) {
+            return false;
+        }
+        Kingdom kingdom = found.get();
+        data.removeResident(villager.getUUID());
+        villager.addTag(RESIDENT_TAG);
+        data.addResident(kingdom, villager.getUUID());
+        Kingdoms.broadcast(world.getServer(), kingdom, Component.translatable("kingdoms.kingdom.advisor_joined",
+                kingdom.displayName(), kingdom.residents().size(), kingdom.levelInfo().villagerCap()));
+        return true;
     }
 
     /** An entity is being removed for good. If it was one of a kingdom's villagers, it no longer counts. */

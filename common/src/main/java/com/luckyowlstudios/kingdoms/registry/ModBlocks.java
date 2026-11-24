@@ -2,6 +2,7 @@ package com.luckyowlstudios.kingdoms.registry;
 
 import com.luckyowlstudios.kingdoms.block.ScholarsDeskBlock;
 import com.luckyowlstudios.kingdoms.block.TownHallBlock;
+import com.luckyowlstudios.kingdoms.block.WatchtowerBlock;
 import com.luckyowlstudios.kingdoms.platform.Services;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.level.block.SoundType;
@@ -23,6 +24,14 @@ public final class ModBlocks {
 
     public static final Supplier<ScholarsDeskBlock> SCHOLARS_DESK = Services.REGISTRY.register(BuiltInRegistries.BLOCK, "scholars_desk",
             () -> new ScholarsDeskBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.WOOD)
+                    .instrument(NoteBlockInstrument.BASS)
+                    .strength(2.5F)
+                    .sound(SoundType.WOOD)
+                    .ignitedByLava()));
+
+    public static final Supplier<WatchtowerBlock> WATCHTOWER = Services.REGISTRY.register(BuiltInRegistries.BLOCK, "watchtower",
+            () -> new WatchtowerBlock(BlockBehaviour.Properties.of()
                     .mapColor(MapColor.WOOD)
                     .instrument(NoteBlockInstrument.BASS)
                     .strength(2.5F)
