@@ -63,6 +63,7 @@ public final class KingdomCommand {
                                 .then(Commands.argument("kingdom", StringArgumentType.greedyString()).suggests(KINGDOMS)
                                         .executes(context -> setLevel(context.getSource(), IntegerArgumentType.getInteger(context, "level"),
                                                 KingdomData.get(context.getSource().getServer()).byName(StringArgumentType.getString(context, "kingdom")))))))
+                .then(DiplomacyCommand.build())
                 .then(Commands.literal("banner")
                         .executes(context -> {
                             ServerPlayer player = context.getSource().getPlayerOrException();

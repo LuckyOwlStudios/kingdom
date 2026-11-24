@@ -1,5 +1,6 @@
 package com.luckyowlstudios.kingdoms.kingdom;
 
+import com.luckyowlstudios.kingdoms.block.entity.TownHallBlockEntity;
 import com.luckyowlstudios.kingdoms.network.CreateKingdomPayload;
 import com.luckyowlstudios.kingdoms.network.OpenCreateKingdomPayload;
 import com.luckyowlstudios.kingdoms.registry.ModBlocks;
@@ -53,6 +54,7 @@ public final class Kingdoms {
             Kingdom kingdom = owner.get();
             if (kingdom.isMember(player.getUUID())) {
                 KingdomScreens.open(player, kingdom);
+                TownHallBlockEntity.onScreenOpened(player, pos);
             } else if (ofPlayer(player).isEmpty() && !kingdom.isBanned(player.getUUID())
                     && (!kingdom.settings().inviteOnly() || kingdom.isInvited(player.getUUID()))) {
                 player.sendSystemMessage(Component.translatable("kingdoms.kingdom.town_hall_of.open", kingdom.displayName(), joinButton(kingdom)));
@@ -71,6 +73,7 @@ public final class Kingdoms {
         if (own.isPresent() && own.get().townHall().isEmpty() && own.get().isLeader(player.getUUID())) {
             // A kingdom that lost its Town Hall can take this one as its new seat, along with the chunk it's in.
             KingdomData.get(player.server).setTownHall(own.get(), hall);
+            TownHallBlockEntity.refresh(player.server, hall);
             player.displayClientMessage(Component.translatable("kingdoms.kingdom.town_hall_claimed", own.get().displayName()), true);
             return;
         }

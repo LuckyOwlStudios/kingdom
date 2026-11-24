@@ -2,6 +2,7 @@ package com.luckyowlstudios.kingdoms.client;
 
 import com.luckyowlstudios.kingdoms.client.screen.CreateKingdomScreen;
 import com.luckyowlstudios.kingdoms.client.screen.KingdomScreen;
+import com.luckyowlstudios.kingdoms.network.DiplomacyViewPayload;
 import com.luckyowlstudios.kingdoms.network.KingdomViewPayload;
 import com.luckyowlstudios.kingdoms.network.OpenCreateKingdomPayload;
 
@@ -17,5 +18,9 @@ public final class KingdomsClient {
 
     public static void handle(KingdomViewPayload payload) {
         KingdomScreen.show(payload);
+    }
+
+    public static void handle(DiplomacyViewPayload payload) {
+        KingdomScreen.showDiplomacy(payload);
     }
 }
