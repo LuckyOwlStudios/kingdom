@@ -6,6 +6,7 @@ import net.minecraft.core.GlobalPos;
 import net.minecraft.core.UUIDUtil;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.TextColor;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.saveddata.maps.MapId;
@@ -13,7 +14,9 @@ import net.minecraft.world.level.saveddata.maps.MapId;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -44,7 +47,7 @@ public final class Kingdom {
             Settings.CODEC.optionalFieldOf("settings", Settings.DEFAULT).forGetter(Kingdom::settings),
             MapId.CODEC.optionalFieldOf("map").forGetter(Kingdom::map),
             ChunkClaim.CODEC.listOf().optionalFieldOf("claims", List.of()).forGetter(kingdom -> List.copyOf(kingdom.claims)),
-            Growth.MAP_CODEC.forGetter(kingdom -> new Growth(kingdom.level, List.copyOf(kingdom.residents)))
+            Growth.MAP_CODEC.forGetter(kingdom -> new Growth(kingdom.level, List.copyOf(kingdom.residents), Map.copyOf(kingdom.perks), kingdom.taxes))
     ).apply(instance, (id, name, color, founder, leader, members, invites, townHall, banner, officers, banned, settings, map, claims, growth) -> {
         Kingdom kingdom = new Kingdom(id, name, color, founder, leader.orElse(founder), new LinkedHashSet<>(members), townHall.orElse(null));
         kingdom.invites.addAll(invites);
@@ -56,17 +59,24 @@ public final class Kingdom {
         kingdom.claims.addAll(claims);
         kingdom.level = Math.clamp(growth.level(), 1, KingdomLevel.MAX_LEVEL);
         kingdom.residents.addAll(growth.residents());
+        growth.perks().forEach((perk, tier) -> {
+            if (tier > 0) kingdom.perks.put(perk, tier);
+        });
+        kingdom.taxes = Math.max(0, growth.taxes());
         return kingdom;
     }));
 
     /**
-     * Level and villagers, saved as top-level fields ({@code level}, {@code residents}) but grouped so the kingdom
-     * codec stays under the 16-field limit.
+     * Level, villagers, perk tiers and the tax treasury, saved as top-level fields ({@code level}, {@code residents},
+     * {@code perks}, {@code taxes}) but grouped so the kingdom codec stays under the 16-field limit. Add new saved
+     * fields here too.
      */
-    private record Growth(int level, List<UUID> residents) {
+    private record Growth(int level, List<UUID> residents, Map<ResourceLocation, Integer> perks, int taxes) {
         static final com.mojang.serialization.MapCodec<Growth> MAP_CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
                 Codec.INT.optionalFieldOf("level", 1).forGetter(Growth::level),
-                UUIDUtil.CODEC.listOf().optionalFieldOf("residents", List.of()).forGetter(Growth::residents)
+                UUIDUtil.CODEC.listOf().optionalFieldOf("residents", List.of()).forGetter(Growth::residents),
+                Codec.unboundedMap(ResourceLocation.CODEC, Codec.INT).optionalFieldOf("perks", Map.of()).forGetter(Growth::perks),
+                Codec.INT.optionalFieldOf("taxes", 0).forGetter(Growth::taxes)
         ).apply(instance, Growth::new));
     }
 
@@ -102,6 +112,8 @@ public final class Kingdom {
     private final Set<ChunkClaim> claims = new LinkedHashSet<>();
     private int level = 1;
     private final Set<UUID> residents = new LinkedHashSet<>();
+    private final Map<ResourceLocation, Integer> perks = new LinkedHashMap<>();
+    private int taxes;
 
     Kingdom(UUID id, String name, DyeColor color, UUID founder, UUID leader, Set<UUID> members, GlobalPos townHall) {
         this.id = id;
@@ -198,6 +210,25 @@ public final class Kingdom {
         return Collections.unmodifiableSet(this.residents);
     }
 
+    /**
+     * The tier of every perk the kingdom has unlocked (1 is the first), in the order it unlocked them. Ids of perks
+     * that no longer exist are kept so they come back if the perk does. Use {@link KingdomPerks#activeTier} to see
+     * what is working.
+     */
+    public Map<ResourceLocation, Integer> perks() {
+        return Collections.unmodifiableMap(this.perks);
+    }
+
+    /** The tier the kingdom has unlocked of a perk, or 0. */
+    public int perkTier(ResourceLocation perk) {
+        return this.perks.getOrDefault(perk, 0);
+    }
+
+    /** Emeralds waiting in the Town Hall's treasury, from the Tax Collector perk. */
+    public int taxes() {
+        return this.taxes;
+    }
+
     public boolean isInvited(UUID player) {
         return this.invites.contains(player);
     }
@@ -268,6 +299,14 @@ public final class Kingdom {
 
     Set<UUID> mutableResidents() {
         return this.residents;
+    }
+
+    void setPerkTier(ResourceLocation perk, int tier) {
+        this.perks.put(perk, tier);
+    }
+
+    void setTaxes(int taxes) {
+        this.taxes = Math.max(0, taxes);
     }
 
     void clearTownHall() {

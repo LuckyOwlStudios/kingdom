@@ -13,6 +13,7 @@ import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -50,7 +51,8 @@ public final class KingdomScreens {
         KingdomLevel level = kingdom.levelInfo();
         int cost = level.isMax() ? 0 : KingdomLevel.of(level.level() + 1).cost();
         return new KingdomViewPayload.Growth(level.level(), KingdomLevel.MAX_LEVEL, kingdom.residents().size(),
-                level.villagerCap(), level.landCap(), cost);
+                level.villagerCap(), level.landCap(), cost, KingdomPerks.availablePoints(kingdom), Map.copyOf(kingdom.perks()),
+                kingdom.taxes(), TaxCollector.treasuryCap(viewer.server, kingdom));
     }
 
     /** Opens (or refreshes) the Town Hall screen for a member. */
@@ -111,6 +113,8 @@ public final class KingdomScreens {
             case SET_FRIENDLY_FIRE -> Kingdoms.setSettings(player,
                     new Kingdom.Settings(kingdom.settings().inviteOnly(), action.value() != 0));
             case LEVEL_UP -> Kingdoms.levelUp(player);
+            case UNLOCK_PERK -> KingdomPerks.upgrade(player, action.text());
+            case COLLECT_TAXES -> TaxCollector.collect(player);
             case LEAVE -> {
                 Kingdoms.leave(player);
                 return;
