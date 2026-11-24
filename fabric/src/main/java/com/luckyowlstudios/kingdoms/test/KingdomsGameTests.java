@@ -744,23 +744,30 @@ public class KingdomsGameTests implements FabricGameTest {
         Kingdom kingdom = Kingdoms.tryCreate(leader, new CreateKingdomPayload(hall, "Deskford " + level.getGameTime(), DyeColor.CYAN)).orElseThrow();
         BlockPos desk = hall.east(3);
         level.setBlockAndUpdate(desk, ModBlocks.SCHOLARS_DESK.get().defaultBlockState());
+        // Keep the hall's chunk loaded and ticking, like a nearby player would, so the villager can be found.
+        ChunkClaim center = ChunkClaim.of(GlobalPos.of(level.dimension(), hall));
+        level.setChunkForced(center.x(), center.z(), true);
+        helper.startSequence().thenWaitUntil(() -> helper.assertTrue(level.isPositionEntityTicking(hall), "the hall's chunk isn't loaded yet"))
+                .thenExecute(() -> {
+                    try {
+                        // A villager that didn't move in through the Town Hall (a spawn egg, a nearby village) takes the desk.
+                        Villager villager = EntityType.VILLAGER.create(level);
+                        villager.moveTo(desk.getX() + 0.5, desk.getY() + 1, desk.getZ() + 1.5);
+                        level.addFreshEntity(villager);
+                        villager.getBrain().setMemory(net.minecraft.world.entity.ai.memory.MemoryModuleType.JOB_SITE, GlobalPos.of(level.dimension(), desk));
+                        helper.assertFalse(KingdomVillagers.checkWorker(villager), "a villager without the Scholar job joined");
 
-        // A villager that didn't move in through the Town Hall (a spawn egg, a nearby village) takes the desk.
-        Villager villager = EntityType.VILLAGER.create(level);
-        villager.moveTo(desk.getX() + 1.5, desk.getY(), desk.getZ() + 0.5);
-        level.addFreshEntity(villager);
-        villager.getBrain().setMemory(net.minecraft.world.entity.ai.memory.MemoryModuleType.JOB_SITE, GlobalPos.of(level.dimension(), desk));
-        helper.assertFalse(KingdomVillagers.checkWorker(villager), "a villager without the Scholar job joined");
-
-        villager.setVillagerData(villager.getVillagerData().setProfession(ModVillagers.SCHOLAR_PROFESSION.get()));
-        helper.assertTrue(KingdomVillagers.checkWorker(villager), "the Scholar didn't join the kingdom");
-        helper.assertTrue(kingdom.residents().contains(villager.getUUID()), "the Scholar isn't a resident");
-        helper.assertFalse(KingdomVillagers.checkWorker(villager), "the Scholar joined twice");
-        helper.assertTrue(KingdomResearch.workingScholars(level.getServer(), kingdom) == 1, "the Scholar isn't working");
-
-        villager.discard();
-        Kingdoms.leave(leader);
-        helper.succeed();
+                        villager.setVillagerData(villager.getVillagerData().setProfession(ModVillagers.SCHOLAR_PROFESSION.get()));
+                        helper.assertTrue(KingdomVillagers.checkWorker(villager), "the Scholar didn't join the kingdom");
+                        helper.assertTrue(kingdom.residents().contains(villager.getUUID()), "the Scholar isn't a resident");
+                        helper.assertFalse(KingdomVillagers.checkWorker(villager), "the Scholar joined twice");
+                        helper.assertTrue(KingdomResearch.workingScholars(level.getServer(), kingdom) == 1, "the Scholar isn't working");
+                        villager.discard();
+                    } finally {
+                        level.setChunkForced(center.x(), center.z(), false);
+                        Kingdoms.leave(leader);
+                    }
+                }).thenSucceed();
     }
 
     @GameTest(template = EMPTY_STRUCTURE)
