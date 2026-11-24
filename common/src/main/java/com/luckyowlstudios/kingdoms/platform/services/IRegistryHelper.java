@@ -4,6 +4,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Registry;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.village.poi.PoiType;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.MenuType;
@@ -26,6 +27,12 @@ public interface IRegistryHelper {
     <T extends BlockEntity> BlockEntityType<T> blockEntityType(BlockEntityFactory<T> factory, Block... validBlocks);
 
     <T extends AbstractContainerMenu> MenuType<T> menuType(MenuFactory<T> factory);
+
+    /**
+     * Registers a point of interest made of every state of {@code block}. Each loader also has to tell the
+     * game which block states belong to it, so this can't go through {@link #register}.
+     */
+    Supplier<PoiType> poiType(String name, int maxTickets, int validRange, Supplier<? extends Block> block);
 
     Item spawnEgg(Supplier<? extends EntityType<? extends Mob>> type, int backgroundColor, int highlightColor, Item.Properties properties);
 

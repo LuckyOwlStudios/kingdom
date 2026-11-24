@@ -2,7 +2,6 @@ package com.luckyowlstudios.kingdoms;
 
 import com.luckyowlstudios.kingdoms.client.renderer.GuideRenderer;
 import com.luckyowlstudios.kingdoms.client.screen.GuideScreen;
-import com.luckyowlstudios.kingdoms.client.screen.TownHallScreen;
 import com.luckyowlstudios.kingdoms.registry.ModEntities;
 import com.luckyowlstudios.kingdoms.registry.ModMenus;
 import net.neoforged.api.distmarker.Dist;
@@ -25,7 +24,6 @@ public class KingdomsNeoForgeClient {
     }
 
     private static void onRegisterScreens(RegisterMenuScreensEvent event) {
-        event.register(ModMenus.TOWN_HALL.get(), TownHallScreen::new);
         event.register(ModMenus.GUIDE.get(), GuideScreen::new);
     }
 }

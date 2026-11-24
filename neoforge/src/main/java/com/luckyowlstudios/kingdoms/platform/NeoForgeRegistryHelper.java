@@ -1,11 +1,14 @@
 package com.luckyowlstudios.kingdoms.platform;
 
+import com.google.common.collect.ImmutableSet;
 import com.luckyowlstudios.kingdoms.Constants;
 import com.luckyowlstudios.kingdoms.platform.services.IRegistryHelper;
 import net.minecraft.core.Registry;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.village.poi.PoiType;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.Item;
@@ -53,6 +56,13 @@ public class NeoForgeRegistryHelper implements IRegistryHelper {
     @Override
     public <T extends AbstractContainerMenu> MenuType<T> menuType(MenuFactory<T> factory) {
         return IMenuTypeExtension.create((containerId, playerInventory, buffer) -> factory.create(containerId, playerInventory));
+    }
+
+    @Override
+    public Supplier<PoiType> poiType(String name, int maxTickets, int validRange, Supplier<? extends Block> block) {
+        // NeoForge fills in the block state to point of interest lookup for registered types.
+        return this.register(BuiltInRegistries.POINT_OF_INTEREST_TYPE, name,
+                () -> new PoiType(ImmutableSet.copyOf(block.get().getStateDefinition().getPossibleStates()), maxTickets, validRange));
     }
 
     @Override

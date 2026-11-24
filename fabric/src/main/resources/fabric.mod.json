@@ -18,6 +18,9 @@
     ],
     "client": [
       "com.luckyowlstudios.kingdoms.KingdomsFabricClient"
+    ],
+    "fabric-gametest": [
+      "com.luckyowlstudios.kingdoms.test.KingdomsGameTests"
     ]
   },
   "mixins": [

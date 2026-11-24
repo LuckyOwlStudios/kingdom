@@ -1,0 +1,105 @@
+package com.luckyowlstudios.kingdoms.kingdom;
+
+import com.luckyowlstudios.kingdoms.network.KingdomActionPayload;
+import com.luckyowlstudios.kingdoms.network.KingdomViewPayload;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.BannerItem;
+import net.minecraft.world.item.DyeColor;
+import net.minecraft.world.item.ItemStack;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * Server side of the Town Hall screen: builds what it shows and carries out its buttons.
+ */
+public final class KingdomScreens {
+
+    private KingdomScreens() {
+    }
+
+    public static KingdomViewPayload view(ServerPlayer viewer, Kingdom kingdom) {
+        List<KingdomViewPayload.Member> members = new ArrayList<>();
+        // Leader, then officers, then members, then the ban list.
+        kingdom.members().stream()
+                .sorted((a, b) -> kingdom.rank(b).ordinal() - kingdom.rank(a).ordinal())
+                .forEach(id -> members.add(new KingdomViewPayload.Member(id,
+                        KingdomTeams.playerName(viewer.server, id).orElse("?"), kingdom.rank(id), false)));
+        kingdom.banned().forEach(id -> members.add(new KingdomViewPayload.Member(id,
+                KingdomTeams.playerName(viewer.server, id).orElse("?"), KingdomRank.NONE, true)));
+        BlockPos hall = kingdom.townHall().map(pos -> pos.pos()).orElse(viewer.blockPosition());
+        return new KingdomViewPayload(hall, kingdom.name(), kingdom.color(), kingdom.banner().orElse(ItemStack.EMPTY),
+                kingdom.map(), KingdomMaps.scale(viewer, kingdom),
+                kingdom.settings().inviteOnly(), kingdom.settings().friendlyFire(),
+                kingdom.rank(viewer.getUUID()), members);
+    }
+
+    /** Opens (or refreshes) the Town Hall screen for a member. */
+    public static void open(ServerPlayer player, Kingdom kingdom) {
+        KingdomMaps.getOrCreate(player, kingdom);
+        KingdomMaps.sendTo(player, kingdom);
+        player.connection.send(new ClientboundCustomPayloadPacket(view(player, kingdom)));
+    }
+
+    /** A button in the Town Hall screen. Every action re-checks the player's rank. */
+    public static void handle(ServerPlayer player, KingdomActionPayload action) {
+        Optional<Kingdom> before = Kingdoms.ofPlayer(player);
+        if (before.isEmpty()) {
+            return;
+        }
+        Kingdom kingdom = before.get();
+        UUID target = action.target().orElse(null);
+        switch (action.action()) {
+            case PROMOTE -> {
+                if (target != null) Kingdoms.promote(player, target);
+            }
+            case DEMOTE -> {
+                if (target != null) Kingdoms.demote(player, target);
+            }
+            case KICK -> {
+                if (target != null) Kingdoms.kick(player, target);
+            }
+            case BAN -> {
+                if (target != null) Kingdoms.ban(player, target);
+            }
+            case UNBAN -> {
+                if (target != null) Kingdoms.unban(player, target);
+            }
+            case INVITE -> {
+                ServerPlayer invited = player.server.getPlayerList().getPlayerByName(action.text().strip());
+                if (invited != null) {
+                    Kingdoms.invite(player, invited);
+                } else {
+                    player.sendSystemMessage(net.minecraft.network.chat.Component.translatable("kingdoms.kingdom.invite.not_online", action.text()));
+                }
+            }
+            case SET_COLOR -> {
+                if (action.value() >= 0 && action.value() < DyeColor.values().length) {
+                    Kingdoms.setColor(player, DyeColor.byId(action.value()));
+                }
+            }
+            case SET_BANNER -> {
+                int slot = action.value();
+                if (slot >= 0 && slot < player.getInventory().getContainerSize()) {
+                    ItemStack stack = player.getInventory().getItem(slot);
+                    if (stack.getItem() instanceof BannerItem) {
+                        Kingdoms.setBanner(player, stack);
+                    }
+                }
+            }
+            case SET_INVITE_ONLY -> Kingdoms.setSettings(player,
+                    new Kingdom.Settings(action.value() != 0, kingdom.settings().friendlyFire()));
+            case SET_FRIENDLY_FIRE -> Kingdoms.setSettings(player,
+                    new Kingdom.Settings(kingdom.settings().inviteOnly(), action.value() != 0));
+            case LEAVE -> {
+                Kingdoms.leave(player);
+                return;
+            }
+        }
+        Kingdoms.ofPlayer(player).ifPresent(current -> player.connection.send(new ClientboundCustomPayloadPacket(view(player, current))));
+    }
+}
