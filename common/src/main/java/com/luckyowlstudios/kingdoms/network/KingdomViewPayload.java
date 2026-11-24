@@ -10,6 +10,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.saveddata.maps.MapId;
 
 import java.util.ArrayList;
@@ -23,9 +24,13 @@ import java.util.UUID;
  *
  * @param viewerRank the rank of the player looking, which decides which buttons work
  * @param members    members and banned players; banned ones have rank {@link KingdomRank#NONE}
+ * @param mapCenterX the block the kingdom map is centred on (clients don't get this with the map itself)
+ * @param claims     the kingdom's claimed chunks in the map's dimension, to draw on the map
+ * @param claimCount how many chunks the kingdom holds in every dimension
  */
 public record KingdomViewPayload(BlockPos townHall, String name, DyeColor color, ItemStack banner,
-                                 Optional<MapId> map, int mapScale, boolean inviteOnly, boolean friendlyFire,
+                                 Optional<MapId> map, int mapScale, int mapCenterX, int mapCenterZ,
+                                 List<ChunkPos> claims, int claimCount, boolean inviteOnly, boolean friendlyFire,
                                  KingdomRank viewerRank, List<Member> members) implements CustomPacketPayload {
 
     public static final Type<KingdomViewPayload> TYPE = new Type<>(Constants.id("kingdom_view"));
@@ -47,6 +52,11 @@ public record KingdomViewPayload(BlockPos townHall, String name, DyeColor color,
                 ItemStack.OPTIONAL_STREAM_CODEC.encode(buf, view.banner);
                 ByteBufCodecs.optional(MapId.STREAM_CODEC).encode(buf, view.map);
                 buf.writeVarInt(view.mapScale);
+                buf.writeInt(view.mapCenterX);
+                buf.writeInt(view.mapCenterZ);
+                buf.writeVarInt(view.claims.size());
+                view.claims.forEach(chunk -> buf.writeLong(chunk.toLong()));
+                buf.writeVarInt(view.claimCount);
                 buf.writeBoolean(view.inviteOnly);
                 buf.writeBoolean(view.friendlyFire);
                 buf.writeVarInt(view.viewerRank.ordinal());
@@ -60,6 +70,14 @@ public record KingdomViewPayload(BlockPos townHall, String name, DyeColor color,
                 ItemStack banner = ItemStack.OPTIONAL_STREAM_CODEC.decode(buf);
                 Optional<MapId> map = ByteBufCodecs.optional(MapId.STREAM_CODEC).decode(buf);
                 int mapScale = buf.readVarInt();
+                int mapCenterX = buf.readInt();
+                int mapCenterZ = buf.readInt();
+                int claimSize = buf.readVarInt();
+                List<ChunkPos> claims = new ArrayList<>(claimSize);
+                for (int i = 0; i < claimSize; i++) {
+                    claims.add(new ChunkPos(buf.readLong()));
+                }
+                int claimCount = buf.readVarInt();
                 boolean inviteOnly = buf.readBoolean();
                 boolean friendlyFire = buf.readBoolean();
                 KingdomRank viewerRank = KingdomRank.values()[buf.readVarInt()];
@@ -68,7 +86,8 @@ public record KingdomViewPayload(BlockPos townHall, String name, DyeColor color,
                 for (int i = 0; i < count; i++) {
                     members.add(Member.STREAM_CODEC.decode(buf));
                 }
-                return new KingdomViewPayload(townHall, name, color, banner, map, mapScale, inviteOnly, friendlyFire, viewerRank, members);
+                return new KingdomViewPayload(townHall, name, color, banner, map, mapScale, mapCenterX, mapCenterZ,
+                        claims, claimCount, inviteOnly, friendlyFire, viewerRank, members);
             });
 
     @Override

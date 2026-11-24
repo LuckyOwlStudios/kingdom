@@ -26,8 +26,12 @@ import net.minecraft.world.item.BannerItem;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.util.Mth;
 
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -239,6 +243,10 @@ public class KingdomScreen extends Screen {
             graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.member_count", count), textLeft, top + 40, 0xA0A0A0);
             graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.your_rank",
                     Component.translatable(KingdomScreen.this.view.viewerRank().translationKey())), left, top + 62, 0xA0A0A0);
+            int claimCount = KingdomScreen.this.view.claimCount();
+            graphics.drawString(KingdomScreen.this.font, claimCount == 1
+                    ? Component.translatable("kingdoms.kingdom.screen.claimed_chunks.one")
+                    : Component.translatable("kingdoms.kingdom.screen.claimed_chunks", claimCount), left, top + 74, 0xA0A0A0);
 
             // The kingdom map, on vanilla's map background.
             int mapLeft = centerX + 10;
@@ -252,6 +260,7 @@ public class KingdomScreen extends Screen {
                 minecraft.gameRenderer.getMapRenderer().render(pose, graphics.bufferSource(), KingdomScreen.this.view.map().get(), data, true, 0xF000F0);
                 pose.popPose();
                 graphics.flush();
+                KingdomScreen.this.renderClaims(graphics, mapLeft, top);
             }
             graphics.drawCenteredString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.map_scale",
                     KingdomScreen.this.view.mapScale(), 4), mapLeft + MAP_SIZE / 2, top + MAP_SIZE + 10, 0xA0A0A0);
@@ -259,6 +268,47 @@ public class KingdomScreen extends Screen {
                 graphics.renderTooltip(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.map_hint"), mouseX, mouseY);
             }
         }
+    }
+
+    /**
+     * Shades the kingdom's claimed chunks on the map in its colour, with an outline around the edge of its land.
+     * The map is centred on {@code mapCenterX/Z} and each map pixel covers {@code 2^scale} blocks.
+     */
+    private void renderClaims(GuiGraphics graphics, int mapLeft, int mapTop) {
+        Set<ChunkPos> claims = new HashSet<>(this.view.claims());
+        if (claims.isEmpty()) {
+            return;
+        }
+        int rgb = this.view.color().getTextColor() & 0xFFFFFF;
+        int fill = 0x55000000 | rgb;
+        int edge = 0xDD000000 | rgb;
+        int scale = 1 << this.view.mapScale();
+        float blocksPerPixel = scale;
+        // The block at the map's top-left pixel, worked out the same way vanilla fills a map in (MapItem#update).
+        float worldLeft = (this.view.mapCenterX() / scale - MAP_SIZE / 2) * scale;
+        float worldTop = (this.view.mapCenterZ() / scale - MAP_SIZE / 2) * scale;
+
+        graphics.enableScissor(mapLeft, mapTop, mapLeft + MAP_SIZE, mapTop + MAP_SIZE);
+        PoseStack pose = graphics.pose();
+        pose.pushPose();
+        pose.translate(0.0F, 0.0F, 2.0F); // above the map
+        for (ChunkPos chunk : claims) {
+            int x0 = mapLeft + Mth.floor((chunk.getMinBlockX() - worldLeft) / blocksPerPixel);
+            int z0 = mapTop + Mth.floor((chunk.getMinBlockZ() - worldTop) / blocksPerPixel);
+            int x1 = Math.max(x0 + 1, mapLeft + Mth.floor((chunk.getMaxBlockX() + 1 - worldLeft) / blocksPerPixel));
+            int z1 = Math.max(z0 + 1, mapTop + Mth.floor((chunk.getMaxBlockZ() + 1 - worldTop) / blocksPerPixel));
+            if (x1 < mapLeft || z1 < mapTop || x0 > mapLeft + MAP_SIZE || z0 > mapTop + MAP_SIZE) {
+                continue;
+            }
+            graphics.fill(x0, z0, x1, z1, fill);
+            // Outline only where the kingdom's land ends, so neighbouring claims read as one area.
+            if (!claims.contains(new ChunkPos(chunk.x, chunk.z - 1))) graphics.fill(x0, z0, x1, z0 + 1, edge);
+            if (!claims.contains(new ChunkPos(chunk.x, chunk.z + 1))) graphics.fill(x0, z1 - 1, x1, z1, edge);
+            if (!claims.contains(new ChunkPos(chunk.x - 1, chunk.z))) graphics.fill(x0, z0, x0 + 1, z1, edge);
+            if (!claims.contains(new ChunkPos(chunk.x + 1, chunk.z))) graphics.fill(x1 - 1, z0, x1, z1, edge);
+        }
+        pose.popPose();
+        graphics.disableScissor();
     }
 
     /** Everyone in the kingdom, and the ban list, with rank buttons and an invite box. */

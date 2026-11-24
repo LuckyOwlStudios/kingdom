@@ -15,6 +15,7 @@ import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import net.minecraft.world.item.ItemStack;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -32,6 +33,8 @@ public final class KingdomData extends SavedData {
             new SavedData.Factory<>(KingdomData::new, KingdomData::load, null);
 
     private final Map<UUID, Kingdom> kingdoms = new LinkedHashMap<>();
+    /** Who owns each claimed chunk, for quick lookups. Rebuilt from the kingdoms on load. */
+    private final Map<ChunkClaim, UUID> claimOwners = new HashMap<>();
 
     public static KingdomData get(MinecraftServer server) {
         return server.overworld().getDataStorage().computeIfAbsent(FACTORY, FILE_NAME);
@@ -53,6 +56,40 @@ public final class KingdomData extends SavedData {
         return this.kingdoms.values().stream().filter(kingdom -> kingdom.townHall().filter(pos::equals).isPresent()).findFirst();
     }
 
+    /** The kingdom that has claimed this chunk, if any. */
+    public Optional<Kingdom> claimedBy(ChunkClaim chunk) {
+        return Optional.ofNullable(this.claimOwners.get(chunk)).map(this.kingdoms::get);
+    }
+
+    /** True if nobody has claimed the chunk, or {@code kingdom} already has. */
+    public boolean canClaim(Kingdom kingdom, ChunkClaim chunk) {
+        UUID owner = this.claimOwners.get(chunk);
+        return owner == null || owner.equals(kingdom.id());
+    }
+
+    /**
+     * Gives the chunk to the kingdom.
+     *
+     * @return false if another kingdom already holds it
+     */
+    boolean claim(Kingdom kingdom, ChunkClaim chunk) {
+        if (!this.canClaim(kingdom, chunk)) {
+            return false;
+        }
+        kingdom.mutableClaims().add(chunk);
+        this.claimOwners.put(chunk, kingdom.id());
+        this.setDirty();
+        return true;
+    }
+
+    /** Lets go of a chunk the kingdom holds. */
+    void unclaim(Kingdom kingdom, ChunkClaim chunk) {
+        if (kingdom.mutableClaims().remove(chunk)) {
+            this.claimOwners.remove(chunk, kingdom.id());
+            this.setDirty();
+        }
+    }
+
     public boolean isNameTaken(String name) {
         return this.kingdoms.values().stream().anyMatch(kingdom -> kingdom.name().equalsIgnoreCase(name));
     }
@@ -67,6 +104,7 @@ public final class KingdomData extends SavedData {
         Kingdom kingdom = new Kingdom(UUID.randomUUID(), name, color, founder, founder, members, townHall);
         this.kingdoms.put(kingdom.id(), kingdom);
         this.kingdoms.values().forEach(other -> other.mutableInvites().remove(founder));
+        this.claim(kingdom, ChunkClaim.of(townHall));
         this.setDirty();
         KingdomTeams.sync(server, kingdom);
         return kingdom;
@@ -97,6 +135,9 @@ public final class KingdomData extends SavedData {
         this.setDirty();
         if (kingdom.mutableMembers().isEmpty()) {
             this.kingdoms.remove(kingdom.id());
+            // Its land is free again.
+            kingdom.mutableClaims().forEach(chunk -> this.claimOwners.remove(chunk, kingdom.id()));
+            kingdom.mutableClaims().clear();
             KingdomTeams.remove(server, kingdom);
             return true;
         }
@@ -163,13 +204,16 @@ public final class KingdomData extends SavedData {
         this.setDirty();
     }
 
+    /** Makes this the kingdom's seat and claims the chunk it stands in. The caller checks the chunk is free. */
     void setTownHall(Kingdom kingdom, GlobalPos pos) {
         kingdom.setTownHall(pos);
+        this.claim(kingdom, ChunkClaim.of(pos));
         this.setDirty();
     }
 
-    /** The kingdom's Town Hall was broken: it keeps going, but needs a new one. */
+    /** The kingdom's Town Hall was broken: it keeps going, but needs a new one, and loses the hall's chunk. */
     void clearTownHall(Kingdom kingdom) {
+        kingdom.townHall().ifPresent(hall -> this.unclaim(kingdom, ChunkClaim.of(hall)));
         kingdom.clearTownHall();
         this.setDirty();
     }
@@ -188,6 +232,14 @@ public final class KingdomData extends SavedData {
             LIST_CODEC.parse(registries.createSerializationContext(NbtOps.INSTANCE), tag.get("kingdoms"))
                     .resultOrPartial(error -> Constants.LOG.error("Couldn't load kingdoms: {}", error))
                     .ifPresent(list -> list.forEach(kingdom -> data.kingdoms.put(kingdom.id(), kingdom)));
+        }
+        for (Kingdom kingdom : data.kingdoms.values()) {
+            // Kingdoms founded before chunk claims existed get their Town Hall's chunk now.
+            kingdom.townHall().map(ChunkClaim::of).filter(chunk -> !data.claimOwners.containsKey(chunk))
+                    .ifPresent(kingdom.mutableClaims()::add);
+            for (ChunkClaim chunk : kingdom.mutableClaims()) {
+                data.claimOwners.putIfAbsent(chunk, kingdom.id());
+            }
         }
         return data;
     }

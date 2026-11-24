@@ -10,6 +10,7 @@ import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.saveddata.maps.MapId;
 
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -41,8 +42,9 @@ public final class Kingdom {
             UUIDUtil.CODEC.listOf().optionalFieldOf("officers", List.of()).forGetter(kingdom -> List.copyOf(kingdom.officers)),
             UUIDUtil.CODEC.listOf().optionalFieldOf("banned", List.of()).forGetter(kingdom -> List.copyOf(kingdom.banned)),
             Settings.CODEC.optionalFieldOf("settings", Settings.DEFAULT).forGetter(Kingdom::settings),
-            MapId.CODEC.optionalFieldOf("map").forGetter(Kingdom::map)
-    ).apply(instance, (id, name, color, founder, leader, members, invites, townHall, banner, officers, banned, settings, map) -> {
+            MapId.CODEC.optionalFieldOf("map").forGetter(Kingdom::map),
+            ChunkClaim.CODEC.listOf().optionalFieldOf("claims", List.of()).forGetter(kingdom -> List.copyOf(kingdom.claims))
+    ).apply(instance, (id, name, color, founder, leader, members, invites, townHall, banner, officers, banned, settings, map, claims) -> {
         Kingdom kingdom = new Kingdom(id, name, color, founder, leader.orElse(founder), new LinkedHashSet<>(members), townHall.orElse(null));
         kingdom.invites.addAll(invites);
         kingdom.banner = banner.orElse(ItemStack.EMPTY);
@@ -50,6 +52,7 @@ public final class Kingdom {
         kingdom.banned.addAll(banned);
         kingdom.settings = settings;
         kingdom.map = map.orElse(null);
+        kingdom.claims.addAll(claims);
         return kingdom;
     }));
 
@@ -82,6 +85,7 @@ public final class Kingdom {
     private final Set<UUID> banned = new HashSet<>();
     private Settings settings = Settings.DEFAULT;
     private MapId map;
+    private final Set<ChunkClaim> claims = new LinkedHashSet<>();
 
     Kingdom(UUID id, String name, DyeColor color, UUID founder, UUID leader, Set<UUID> members, GlobalPos townHall) {
         this.id = id;
@@ -154,6 +158,15 @@ public final class Kingdom {
         return Optional.ofNullable(this.map);
     }
 
+    /** Every chunk the kingdom has claimed, in the order it claimed them. */
+    public Set<ChunkClaim> claims() {
+        return Collections.unmodifiableSet(this.claims);
+    }
+
+    public boolean hasClaimed(ChunkClaim chunk) {
+        return this.claims.contains(chunk);
+    }
+
     public boolean isInvited(UUID player) {
         return this.invites.contains(player);
     }
@@ -212,6 +225,10 @@ public final class Kingdom {
 
     void setMap(MapId map) {
         this.map = map;
+    }
+
+    Set<ChunkClaim> mutableClaims() {
+        return this.claims;
     }
 
     void clearTownHall() {
