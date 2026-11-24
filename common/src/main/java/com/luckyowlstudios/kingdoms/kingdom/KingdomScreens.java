@@ -51,6 +51,7 @@ public final class KingdomScreens {
         KingdomMaps.getOrCreate(player, kingdom);
         KingdomMaps.sendTo(player, kingdom);
         player.connection.send(new ClientboundCustomPayloadPacket(view(player, kingdom)));
+        Diplomacy.send(player, kingdom);
     }
 
     /** A button in the Town Hall screen. Every action re-checks the player's rank. */

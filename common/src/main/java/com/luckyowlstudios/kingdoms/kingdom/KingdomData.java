@@ -141,6 +141,7 @@ public final class KingdomData extends SavedData {
             kingdom.mutableClaims().forEach(chunk -> this.claimOwners.remove(chunk, kingdom.id()));
             kingdom.mutableClaims().clear();
             KingdomTeams.remove(server, kingdom);
+            Diplomacy.onDisbanded(server, kingdom);
             // Its Town Hall is free again: put the book away and take the colours down.
             kingdom.townHall().ifPresent(hall -> TownHallBlockEntity.refresh(server, hall));
             return true;

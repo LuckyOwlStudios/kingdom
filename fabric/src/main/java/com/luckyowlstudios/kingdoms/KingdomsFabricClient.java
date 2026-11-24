@@ -5,6 +5,7 @@ import com.luckyowlstudios.kingdoms.client.TownHallTint;
 import com.luckyowlstudios.kingdoms.client.renderer.GuideRenderer;
 import com.luckyowlstudios.kingdoms.client.renderer.TownHallRenderer;
 import com.luckyowlstudios.kingdoms.client.screen.GuideScreen;
+import com.luckyowlstudios.kingdoms.network.DiplomacyViewPayload;
 import com.luckyowlstudios.kingdoms.network.KingdomViewPayload;
 import com.luckyowlstudios.kingdoms.network.OpenCreateKingdomPayload;
 import com.luckyowlstudios.kingdoms.registry.ModBlockEntities;
@@ -31,5 +32,6 @@ public class KingdomsFabricClient implements ClientModInitializer {
         MenuScreens.register(ModMenus.GUIDE.get(), GuideScreen::new);
         ClientPlayNetworking.registerGlobalReceiver(OpenCreateKingdomPayload.TYPE, (payload, context) -> KingdomsClient.handle(payload));
         ClientPlayNetworking.registerGlobalReceiver(KingdomViewPayload.TYPE, (payload, context) -> KingdomsClient.handle(payload));
+        ClientPlayNetworking.registerGlobalReceiver(DiplomacyViewPayload.TYPE, (payload, context) -> KingdomsClient.handle(payload));
     }
 }
