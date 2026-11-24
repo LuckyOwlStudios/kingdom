@@ -291,7 +291,8 @@ public final class KingdomPerks {
         ResourceLocation id = ResourceLocation.tryParse(perkId);
         Optional<KingdomPerk> perk = id == null ? Optional.empty() : byId(id);
         Optional<Kingdom> found = Kingdoms.ofPlayer(player);
-        if (!player.isCreative() || perk.isEmpty() || found.isEmpty()) {
+        // The player's real game mode (ServerPlayer#isCreative can be overridden, as test players do).
+        if (!player.gameMode.isCreative() || perk.isEmpty() || found.isEmpty()) {
             return false;
         }
         Kingdom kingdom = found.get();

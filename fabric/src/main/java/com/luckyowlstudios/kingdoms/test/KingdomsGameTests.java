@@ -741,7 +741,7 @@ public class KingdomsGameTests implements FabricGameTest {
         BlockPos hall = isolatedHall(helper);
         ServerPlayer leader = helper.makeMockServerPlayerInLevel();
         leader.moveTo(hall.getX() + 1.5, hall.getY(), hall.getZ() + 0.5);
-        Kingdom kingdom = Kingdoms.tryCreate(leader, new CreateKingdomPayload(hall, "Scholarton " + level.getGameTime(), DyeColor.CYAN)).orElseThrow();
+        Kingdom kingdom = Kingdoms.tryCreate(leader, new CreateKingdomPayload(hall, "Deskford " + level.getGameTime(), DyeColor.CYAN)).orElseThrow();
         BlockPos desk = hall.east(3);
         level.setBlockAndUpdate(desk, ModBlocks.SCHOLARS_DESK.get().defaultBlockState());
 
