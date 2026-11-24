@@ -1,6 +1,7 @@
 package com.luckyowlstudios.kingdoms.client.screen;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.luckyowlstudios.kingdoms.Constants;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomRank;
 import com.luckyowlstudios.kingdoms.network.KingdomActionPayload;
 import com.luckyowlstudios.kingdoms.network.KingdomActionPayload.Action;
@@ -18,6 +19,7 @@ import net.minecraft.client.gui.components.tabs.TabManager;
 import net.minecraft.client.gui.components.tabs.TabNavigationBar;
 import net.minecraft.client.gui.navigation.ScreenRectangle;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
@@ -44,6 +46,8 @@ public class KingdomScreen extends Screen {
 
     private static final ResourceLocation MAP_BACKGROUND = ResourceLocation.withDefaultNamespace("textures/map/map_background.png");
     private static final int MAP_SIZE = 128;
+    private static final ResourceLocation TOWN_HALL_ICON = Constants.id("textures/map/decorations/townhall.png");
+    private static final int TOWN_HALL_ICON_SIZE = 8;
 
     private KingdomViewPayload view;
     private final TabManager tabManager = new TabManager(this::addRenderableWidget, this::removeWidget);
@@ -262,12 +266,42 @@ public class KingdomScreen extends Screen {
                 graphics.flush();
                 KingdomScreen.this.renderClaims(graphics, mapLeft, top);
             }
+            boolean overHall = data != null && KingdomScreen.this.renderTownHallIcon(graphics, mapLeft, top, mouseX, mouseY);
             graphics.drawCenteredString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.map_scale",
                     KingdomScreen.this.view.mapScale(), 4), mapLeft + MAP_SIZE / 2, top + MAP_SIZE + 10, 0xA0A0A0);
-            if (mouseX >= mapLeft && mouseX < mapLeft + MAP_SIZE && mouseY >= top && mouseY < top + MAP_SIZE) {
+            if (overHall) {
+                graphics.renderTooltip(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.town_hall_of",
+                        KingdomScreen.this.coloredName()), mouseX, mouseY);
+            } else if (mouseX >= mapLeft && mouseX < mapLeft + MAP_SIZE && mouseY >= top && mouseY < top + MAP_SIZE) {
                 graphics.renderTooltip(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.map_hint"), mouseX, mouseY);
             }
         }
+    }
+
+    /** The block at the map's left (or top) edge, worked out the same way vanilla fills a map in (MapItem#update). */
+    private int mapWorldLeft(int center) {
+        int scale = 1 << this.view.mapScale();
+        return (center / scale - MAP_SIZE / 2) * scale;
+    }
+
+    /**
+     * Draws the Town Hall icon where the hall stands on the map (kept on the map's edge if the hall is off it).
+     *
+     * @return true if the mouse is over the icon
+     */
+    private boolean renderTownHallIcon(GuiGraphics graphics, int mapLeft, int mapTop, int mouseX, int mouseY) {
+        float blocksPerPixel = 1 << this.view.mapScale();
+        BlockPos hall = this.view.townHall();
+        int half = TOWN_HALL_ICON_SIZE / 2;
+        int x = mapLeft + Mth.clamp(Mth.floor((hall.getX() + 0.5F - this.mapWorldLeft(this.view.mapCenterX())) / blocksPerPixel), half, MAP_SIZE - half);
+        int y = mapTop + Mth.clamp(Mth.floor((hall.getZ() + 0.5F - this.mapWorldLeft(this.view.mapCenterZ())) / blocksPerPixel), half, MAP_SIZE - half);
+        PoseStack pose = graphics.pose();
+        pose.pushPose();
+        pose.translate(0.0F, 0.0F, 3.0F); // above the map and the claim shading
+        graphics.blit(TOWN_HALL_ICON, x - half, y - half, 0, 0, TOWN_HALL_ICON_SIZE, TOWN_HALL_ICON_SIZE,
+                TOWN_HALL_ICON_SIZE, TOWN_HALL_ICON_SIZE);
+        pose.popPose();
+        return mouseX >= x - half - 1 && mouseX < x + half + 1 && mouseY >= y - half - 1 && mouseY < y + half + 1;
     }
 
     /**
@@ -282,11 +316,9 @@ public class KingdomScreen extends Screen {
         int rgb = this.view.color().getTextColor() & 0xFFFFFF;
         int fill = 0x55000000 | rgb;
         int edge = 0xDD000000 | rgb;
-        int scale = 1 << this.view.mapScale();
-        float blocksPerPixel = scale;
-        // The block at the map's top-left pixel, worked out the same way vanilla fills a map in (MapItem#update).
-        float worldLeft = (this.view.mapCenterX() / scale - MAP_SIZE / 2) * scale;
-        float worldTop = (this.view.mapCenterZ() / scale - MAP_SIZE / 2) * scale;
+        float blocksPerPixel = 1 << this.view.mapScale();
+        float worldLeft = this.mapWorldLeft(this.view.mapCenterX());
+        float worldTop = this.mapWorldLeft(this.view.mapCenterZ());
 
         graphics.enableScissor(mapLeft, mapTop, mapLeft + MAP_SIZE, mapTop + MAP_SIZE);
         PoseStack pose = graphics.pose();
