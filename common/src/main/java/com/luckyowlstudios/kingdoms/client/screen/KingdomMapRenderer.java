@@ -77,12 +77,17 @@ public final class KingdomMapRenderer {
         return Component.literal(view.name()).withStyle(style -> style.withColor(view.color().getTextColor()));
     }
 
+    /** The Town Hall icon's name, "<Kingdom>'s Town Hall", with the kingdom's name in its colour. */
+    public static Component townHallName(KingdomViewPayload view) {
+        return Component.translatable("kingdoms.kingdom.map.town_hall", coloredName(view));
+    }
+
     /** Everything marked on the map. Just the Town Hall for now, in the middle of the grid. */
     public static List<Icon> icons(KingdomViewPayload view) {
         float x = toMapX(view, view.townHall().getX() + 0.5);
         float y = toMapY(view, view.townHall().getZ() + 0.5);
         List<Component> details = List.of(Component.translatable("kingdoms.kingdom.map.panel.level", view.growth().level()));
-        return List.of(new Icon(TOWN_HALL_ICON, x, y, coloredName(view), details, view.banner()));
+        return List.of(new Icon(TOWN_HALL_ICON, x, y, townHallName(view), details, view.banner()));
     }
 
     /** Vanilla's map paper, sized to the whole grid, with the grid's top-left corner at x, y. */

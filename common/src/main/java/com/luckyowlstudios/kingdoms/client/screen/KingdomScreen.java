@@ -391,8 +391,7 @@ public class KingdomScreen extends Screen {
                 }
             }
             if (overHall) {
-                graphics.renderTooltip(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.town_hall_of",
-                        KingdomScreen.this.coloredName()), mouseX, mouseY);
+                graphics.renderTooltip(KingdomScreen.this.font, KingdomMapRenderer.townHallName(view), mouseX, mouseY);
             } else if (this.isOverMap(mouseX, mouseY)) {
                 graphics.renderComponentTooltip(KingdomScreen.this.font, List.of(
                         Component.translatable("kingdoms.kingdom.screen.map_open"),
