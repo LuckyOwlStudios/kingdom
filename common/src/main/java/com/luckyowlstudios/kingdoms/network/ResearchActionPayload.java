@@ -24,7 +24,9 @@ public record ResearchActionPayload(Action action, BlockPos desk, String perk) i
         /** Stop the current research and get its points back. */
         CANCEL,
         /** The screen was closed: stop sending updates. */
-        CLOSE
+        CLOSE,
+        /** Creative mode only: unlock the next tier of {@code perk} now, ignoring points, level and prerequisites. */
+        FORCE_UNLOCK
     }
 
     public static final StreamCodec<RegistryFriendlyByteBuf, ResearchActionPayload> STREAM_CODEC = StreamCodec.composite(

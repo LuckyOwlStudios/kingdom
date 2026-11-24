@@ -306,6 +306,8 @@
   "kingdoms.research.screen.click_upgrade": "Click to research the next tier",
   "kingdoms.research.command.finished": "Finished %s's research",
   "kingdoms.research.command.nothing": "%s isn't researching anything",
+  "kingdoms.kingdom.worker_joined": "A %s working on your land has joined %s! (%s / %s villagers)",
+  "kingdoms.research.screen.creative_unlock": "Creative: click to unlock this tier now",
   "kingdoms.kingdom.advisor_joined": "The Advisor working at your Town Hall has joined %s! (%s / %s villagers)",
   "block.kingdoms.tavern": "Tavern",
   "entity.minecraft.villager.innkeeper": "Innkeeper",

@@ -29,12 +29,13 @@ public abstract class VillagerMixin {
         }
     }
 
-    /** Every few seconds, a villager working at a Town Hall joins that hall's kingdom if it hasn't yet. */
+    /** Every few seconds, a villager working at a Town Hall or another kingdom work block joins that kingdom if it hasn't yet. */
     @Inject(method = "customServerAiStep", at = @At("TAIL"))
     private void kingdoms$joinTownHallKingdom(CallbackInfo ci) {
         Villager self = (Villager) (Object) this;
         if (self.tickCount % 100 == 0) {
             KingdomVillagers.checkAdvisor(self);
+            KingdomVillagers.checkWorker(self);
         }
     }
 }

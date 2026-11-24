@@ -50,13 +50,22 @@ public class ResearchScreen extends Screen {
     /** A perk with every tier unlocked gets the fancier challenge frame. */
     private static final ResourceLocation FRAME_MAXED = ResourceLocation.withDefaultNamespace("advancements/challenge_frame_obtained");
 
-    // ---- Window layout (matches vanilla's window.png) ----
-    private static final int WINDOW_WIDTH = 252;
-    private static final int WINDOW_HEIGHT = 140;
+    // ---- Window layout. The window is vanilla's window.png stretched to size: its borders are drawn as-is (corners)
+    // or stretched (edges), so it can be as big as the tree needs and the screen allows. ----
+    private static final int TEXTURE_WIDTH = 252;
+    private static final int TEXTURE_HEIGHT = 140;
     private static final int INSIDE_X = 9;
     private static final int INSIDE_Y = 18;
-    private static final int INSIDE_WIDTH = 234;
-    private static final int INSIDE_HEIGHT = 113;
+    private static final int BORDER_RIGHT = 9;
+    private static final int BORDER_BOTTOM = 9;
+    /** Never smaller than vanilla's window. */
+    private static final int MIN_INSIDE_WIDTH = 234;
+    private static final int MIN_INSIDE_HEIGHT = 113;
+    /** Empty space around the tree, so it doesn't sit right against the border. */
+    private static final int INSIDE_MARGIN = 24;
+    /** Space under the window for the research progress, and for the Done button. */
+    private static final int SPACE_BELOW = 80;
+    private static final int SPACE_ABOVE = 18;
 
     // ---- Tree layout, in tree space (before panning) ----
     private static final int FRAME_SIZE = 26;
@@ -76,6 +85,9 @@ public class ResearchScreen extends Screen {
     private static final int TEXT_DARK = 0x404040;
 
     private ResearchViewPayload view;
+    /** The size of the window's inside, worked out in {@link #init} from the tree and the screen. */
+    private int insideWidth = MIN_INSIDE_WIDTH;
+    private int insideHeight = MIN_INSIDE_HEIGHT;
     private Button cancel;
 
     /** Where the tree has been dragged to; 0, 0 shows its top left corner. */
@@ -113,13 +125,21 @@ public class ResearchScreen extends Screen {
 
     // ---- Layout ----
 
+    private int windowWidth() {
+        return INSIDE_X + this.insideWidth + BORDER_RIGHT;
+    }
+
+    private int windowHeight() {
+        return INSIDE_Y + this.insideHeight + BORDER_BOTTOM;
+    }
+
     private int windowLeft() {
-        return (this.width - WINDOW_WIDTH) / 2;
+        return (this.width - this.windowWidth()) / 2;
     }
 
     /** Leaves room for the title above, and the research progress and Done button below. */
     private int windowTop() {
-        return Math.max(18, (this.height - WINDOW_HEIGHT - 76) / 2 + 6);
+        return Math.max(SPACE_ABOVE, (this.height - this.windowHeight() - SPACE_BELOW - SPACE_ABOVE) / 2 + SPACE_ABOVE);
     }
 
     private int insideLeft() {
@@ -154,12 +174,12 @@ public class ResearchScreen extends Screen {
 
     /** Where the tree's top left corner is on screen, after panning (or centred, if it fits). */
     private int treeLeft() {
-        int spare = INSIDE_WIDTH - this.treeWidth();
+        int spare = this.insideWidth - this.treeWidth();
         return this.insideLeft() + (spare >= 0 ? spare / 2 : Mth.floor(this.scrollX));
     }
 
     private int treeTop() {
-        int spare = INSIDE_HEIGHT - this.treeHeight();
+        int spare = this.insideHeight - this.treeHeight();
         return this.insideTop() + (spare >= 0 ? spare / 2 : Mth.floor(this.scrollY));
     }
 
@@ -172,8 +192,8 @@ public class ResearchScreen extends Screen {
     }
 
     private boolean isInside(double mouseX, double mouseY) {
-        return mouseX >= this.insideLeft() && mouseX < this.insideLeft() + INSIDE_WIDTH
-                && mouseY >= this.insideTop() && mouseY < this.insideTop() + INSIDE_HEIGHT;
+        return mouseX >= this.insideLeft() && mouseX < this.insideLeft() + this.insideWidth
+                && mouseY >= this.insideTop() && mouseY < this.insideTop() + this.insideHeight;
     }
 
     private Optional<KingdomPerk> perkAt(double mouseX, double mouseY) {
@@ -192,10 +212,16 @@ public class ResearchScreen extends Screen {
 
     @Override
     protected void init() {
-        int progressTop = this.windowTop() + WINDOW_HEIGHT + 4;
+        // As big as the tree (plus a margin), as long as it fits on screen; past that the tree pans.
+        int maxWidth = Math.max(MIN_INSIDE_WIDTH, this.width - 40 - INSIDE_X - BORDER_RIGHT);
+        int maxHeight = Math.max(MIN_INSIDE_HEIGHT, this.height - SPACE_ABOVE - SPACE_BELOW - INSIDE_Y - BORDER_BOTTOM);
+        this.insideWidth = Mth.clamp(this.treeWidth() + INSIDE_MARGIN * 2, MIN_INSIDE_WIDTH, maxWidth);
+        this.insideHeight = Mth.clamp(this.treeHeight() + INSIDE_MARGIN, MIN_INSIDE_HEIGHT, maxHeight);
+        this.scroll(0, 0);
+        int progressTop = this.windowTop() + this.windowHeight() + 4;
         this.cancel = this.addRenderableWidget(Button.builder(Component.translatable("kingdoms.research.screen.cancel"),
                 button -> this.send(ResearchActionPayload.Action.CANCEL, ""))
-                .bounds(this.windowLeft() + WINDOW_WIDTH - 70, progressTop + 2, 70, 20).build());
+                .bounds(this.windowLeft() + this.windowWidth() - 70, progressTop + 2, 70, 20).build());
         this.cancel.visible = this.view.research().isPresent();
         this.cancel.active = this.canResearch();
         this.cancel.setTooltip(Tooltip.create(Component.translatable(this.canResearch()
@@ -226,14 +252,14 @@ public class ResearchScreen extends Screen {
         this.renderInside(graphics);
 
         RenderSystem.enableBlend();
-        graphics.blit(WINDOW, left, top, 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
+        this.renderWindow(graphics, left, top);
         // The title bar: points to spend on the left, Scholars at work on the right.
         graphics.drawString(this.font, Component.translatable("kingdoms.kingdom.screen.perk_points.short", this.view.perkPoints()),
                 left + 8, top + 6, TEXT_DARK, false);
         Component scholars = Component.translatable("kingdoms.research.screen.scholars", this.view.scholars());
-        graphics.drawString(this.font, scholars, left + WINDOW_WIDTH - 8 - this.font.width(scholars), top + 6, TEXT_DARK, false);
+        graphics.drawString(this.font, scholars, left + this.windowWidth() - 8 - this.font.width(scholars), top + 6, TEXT_DARK, false);
 
-        this.renderProgress(graphics, left, top + WINDOW_HEIGHT + 4);
+        this.renderProgress(graphics, left, top + this.windowHeight() + 4);
 
         Optional<KingdomPerk> hovered = this.perkAt(mouseX, mouseY);
         hovered.ifPresent(perk -> {
@@ -244,19 +270,47 @@ public class ResearchScreen extends Screen {
         });
     }
 
+    /** Vanilla's window, stretched: corners as they are, edges stretched between them. The middle is see-through. */
+    private void renderWindow(GuiGraphics graphics, int left, int top) {
+        int width = this.windowWidth();
+        int height = this.windowHeight();
+        int middleWidth = width - INSIDE_X - BORDER_RIGHT;
+        int middleHeight = height - INSIDE_Y - BORDER_BOTTOM;
+        int textureMiddleWidth = TEXTURE_WIDTH - INSIDE_X - BORDER_RIGHT;
+        int textureMiddleHeight = TEXTURE_HEIGHT - INSIDE_Y - BORDER_BOTTOM;
+        int right = left + width - BORDER_RIGHT;
+        int bottom = top + height - BORDER_BOTTOM;
+        int textureRight = TEXTURE_WIDTH - BORDER_RIGHT;
+        int textureBottom = TEXTURE_HEIGHT - BORDER_BOTTOM;
+        // Corners.
+        this.windowPiece(graphics, left, top, INSIDE_X, INSIDE_Y, 0, 0, INSIDE_X, INSIDE_Y);
+        this.windowPiece(graphics, right, top, BORDER_RIGHT, INSIDE_Y, textureRight, 0, BORDER_RIGHT, INSIDE_Y);
+        this.windowPiece(graphics, left, bottom, INSIDE_X, BORDER_BOTTOM, 0, textureBottom, INSIDE_X, BORDER_BOTTOM);
+        this.windowPiece(graphics, right, bottom, BORDER_RIGHT, BORDER_BOTTOM, textureRight, textureBottom, BORDER_RIGHT, BORDER_BOTTOM);
+        // Edges.
+        this.windowPiece(graphics, left + INSIDE_X, top, middleWidth, INSIDE_Y, INSIDE_X, 0, textureMiddleWidth, INSIDE_Y);
+        this.windowPiece(graphics, left + INSIDE_X, bottom, middleWidth, BORDER_BOTTOM, INSIDE_X, textureBottom, textureMiddleWidth, BORDER_BOTTOM);
+        this.windowPiece(graphics, left, top + INSIDE_Y, INSIDE_X, middleHeight, 0, INSIDE_Y, INSIDE_X, textureMiddleHeight);
+        this.windowPiece(graphics, right, top + INSIDE_Y, BORDER_RIGHT, middleHeight, textureRight, INSIDE_Y, BORDER_RIGHT, textureMiddleHeight);
+    }
+
+    private void windowPiece(GuiGraphics graphics, int x, int y, int width, int height, int u, int v, int uWidth, int vHeight) {
+        graphics.blit(WINDOW, x, y, width, height, u, v, uWidth, vHeight, 256, 256);
+    }
+
     /** The tiled background, branch names, the lines between perks, and the perks themselves, clipped to the window. */
     private void renderInside(GuiGraphics graphics) {
         int insideLeft = this.insideLeft();
         int insideTop = this.insideTop();
-        graphics.enableScissor(insideLeft, insideTop, insideLeft + INSIDE_WIDTH, insideTop + INSIDE_HEIGHT);
+        graphics.enableScissor(insideLeft, insideTop, insideLeft + this.insideWidth, insideTop + this.insideHeight);
 
         // Tile the background so it moves with the tree.
         int treeLeft = this.treeLeft();
         int treeTop = this.treeTop();
         int startX = insideLeft - Math.floorMod(insideLeft - treeLeft, 16);
         int startY = insideTop - Math.floorMod(insideTop - treeTop, 16);
-        for (int x = startX; x < insideLeft + INSIDE_WIDTH; x += 16) {
-            for (int y = startY; y < insideTop + INSIDE_HEIGHT; y += 16) {
+        for (int x = startX; x < insideLeft + this.insideWidth; x += 16) {
+            for (int y = startY; y < insideTop + this.insideHeight; y += 16) {
                 graphics.blit(BACKGROUND, x, y, 0.0F, 0.0F, 16, 16, 16, 16);
             }
         }
@@ -313,7 +367,15 @@ public class ResearchScreen extends Screen {
         return KingdomPerks.blocker(perk, this.view.level(), this.view.perkPoints(), this.view::perkTier, this.view.researching());
     }
 
+    /** In Creative mode, clicking a perk unlocks its next tier straight away (the server checks too). */
+    private boolean isCreative() {
+        return this.minecraft != null && this.minecraft.player != null && this.minecraft.player.isCreative();
+    }
+
     private boolean canStart(KingdomPerk perk) {
+        if (this.isCreative()) {
+            return this.tier(perk) < perk.maxTier();
+        }
         return this.canResearch() && this.blocker(perk) == KingdomPerks.Blocker.NONE;
     }
 
@@ -430,22 +492,28 @@ public class ResearchScreen extends Screen {
             status = Component.translatable(blocker.translationKey() + ".short", next.requiredLevel(), next.cost()).withStyle(color);
         }
         lines.add(status);
+        if (this.isCreative() && tier < perk.maxTier()) {
+            lines.add(Component.translatable("kingdoms.research.screen.creative_unlock").withStyle(ChatFormatting.LIGHT_PURPLE));
+        }
         return lines;
     }
 
     /** What's being researched, a bar with how far along it is, and how long is left at the current pace. */
     private void renderProgress(GuiGraphics graphics, int left, int top) {
-        int textWidth = WINDOW_WIDTH - 76;
+        int textWidth = this.windowWidth() - 76;
         Optional<ResearchViewPayload.Progress> research = this.view.research();
         if (research.isEmpty()) {
             Component idle = Component.translatable(this.canResearch()
                     ? "kingdoms.research.screen.idle" : "kingdoms.research.screen.idle.member");
-            graphics.drawWordWrap(this.font, idle, left, top + 4, WINDOW_WIDTH, 0xA0A0A0);
+            graphics.drawWordWrap(this.font, idle, left, top + 4, this.windowWidth(), 0xA0A0A0);
             return;
         }
         ResearchViewPayload.Progress progress = research.get();
         Component perk = KingdomPerks.byId(progress.perk()).map(KingdomPerk::displayName).orElse(Component.literal(progress.perk().toString()));
-        graphics.drawString(this.font, Component.translatable("kingdoms.research.screen.researching", perk, progress.tier()), left, top, 0xFFFFFF);
+        // Kept left of the Cancel button.
+        String title = this.font.plainSubstrByWidth(
+                Component.translatable("kingdoms.research.screen.researching", perk, progress.tier()).getString(), textWidth);
+        graphics.drawString(this.font, title, left, top, 0xFFFFFF);
         int barTop = top + 11;
         graphics.fill(left - 1, barTop - 1, left + textWidth + 1, barTop + BAR_HEIGHT + 1, 0xFF000000);
         graphics.fill(left, barTop, left + textWidth, barTop + BAR_HEIGHT, 0xFF303030);
@@ -459,7 +527,7 @@ public class ResearchScreen extends Screen {
         } else {
             pace = Component.translatable("kingdoms.research.screen.paused", percent).withStyle(ChatFormatting.RED);
         }
-        graphics.drawWordWrap(this.font, pace, left, barTop + BAR_HEIGHT + 3, WINDOW_WIDTH, 0xA0A0A0);
+        graphics.drawWordWrap(this.font, pace, left, barTop + BAR_HEIGHT + 3, textWidth, 0xA0A0A0);
     }
 
     // ---- Input: drag to pan, click a perk to research it ----
@@ -495,7 +563,8 @@ public class ResearchScreen extends Screen {
                     if (this.minecraft != null) {
                         this.minecraft.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
                     }
-                    this.send(ResearchActionPayload.Action.START, perk.id().toString());
+                    this.send(this.isCreative() ? ResearchActionPayload.Action.FORCE_UNLOCK : ResearchActionPayload.Action.START,
+                            perk.id().toString());
                 });
             }
             return true;
@@ -514,8 +583,8 @@ public class ResearchScreen extends Screen {
 
     /** Moves the tree, keeping it from being dragged out of the window. Does nothing along an axis it fits on. */
     private void scroll(double dx, double dy) {
-        this.scrollX = Mth.clamp(this.scrollX + dx, Math.min(0, INSIDE_WIDTH - this.treeWidth()), 0);
-        this.scrollY = Mth.clamp(this.scrollY + dy, Math.min(0, INSIDE_HEIGHT - this.treeHeight()), 0);
+        this.scrollX = Mth.clamp(this.scrollX + dx, Math.min(0, this.insideWidth - this.treeWidth()), 0);
+        this.scrollY = Mth.clamp(this.scrollY + dy, Math.min(0, this.insideHeight - this.treeHeight()), 0);
     }
 
     @Override
