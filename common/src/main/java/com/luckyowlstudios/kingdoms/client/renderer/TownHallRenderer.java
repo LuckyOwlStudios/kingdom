@@ -23,8 +23,11 @@ import net.minecraft.world.level.block.state.BlockState;
 public class TownHallRenderer implements BlockEntityRenderer<TownHallBlockEntity> {
 
     private static final float PIXEL = 1.0F / 16.0F;
-    /** How far each half turns when fully open, in radians: as the lectern draws it, with the pages almost flat. */
-    private static final float MAX_SPREAD = 1.5F;
+    /**
+     * How far each half turns when fully open, in radians. A quarter turn each lays both covers flat on the table: the
+     * back cover stays put and the front cover swings a full 180 degrees over the spine.
+     */
+    private static final float MAX_SPREAD = Mth.HALF_PI;
     private static final ResourceLocation TEXTURE = Constants.id("textures/entity/town_hall_book.png");
     /** Where the book's centre sits, from the middle of the top: towards the front, clear of the inkwell at the back. */
     private static final float FORWARD = 2.0F * PIXEL;
