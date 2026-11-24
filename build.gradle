@@ -1,0 +1,5 @@
+plugins {
+    // See https://fabricmc.net/develop/ and https://projects.neoforged.net/neoforged/moddevgradle for the latest versions.
+    id 'fabric-loom' version '1.10-SNAPSHOT' apply false
+    id 'net.neoforged.moddev' version '2.0.+' apply false
+}
