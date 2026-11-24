@@ -39,6 +39,7 @@ public final class KingdomVillagers {
     public static void tick(MinecraftServer server) {
         KingdomTavern.tick(server);
         KingdomCelebration.tick(server);
+        Watchtowers.tick(server);
         if (server.getTickCount() % 20 != 0) {
             return;
         }

@@ -1,9 +1,12 @@
 {
   "block.kingdoms.town_hall": "Town Hall",
+  "block.kingdoms.watchtower": "Watchtower",
   "entity.kingdoms.guide": "Guide",
   "item.kingdoms.guide_spawn_egg": "Guide Spawn Egg",
   "gui.kingdoms.coming_soon": "Coming soon",
   "entity.minecraft.villager.advisor": "Advisor",
+  "entity.minecraft.zombie_villager.lookout": "Lookout",
+  "entity.minecraft.villager.lookout": "Lookout",
   "entity.minecraft.zombie_villager.advisor": "Advisor",
   "kingdoms.kingdom.create.title": "Create Your Kingdom",
   "kingdoms.kingdom.create.name": "Kingdom Name",
@@ -287,5 +290,10 @@
   "kingdoms.kingdom.villager_arrived_night": "A traveller stayed the night at the Tavern and has moved into %s! (%s / %s villagers)",
   "kingdoms.tavern.open": "The Tavern is open: a traveller can move in each night",
   "kingdoms.tavern.no_innkeeper": "The Tavern needs an Innkeeper from your kingdom before travellers will stay",
-  "kingdoms.tavern.not_on_land": "This Tavern isn't on your kingdom's land"
+  "kingdoms.tavern.not_on_land": "This Tavern isn't on your kingdom's land",
+  "kingdoms.watchtower.alert.wandering_trader": "[Watchtower] A wandering trader has arrived at %2$s, %3$s, %4$s.",
+  "kingdoms.watchtower.alert.illager_patrol": "[Watchtower] An illager patrol of %1$s is approaching at %2$s, %3$s, %4$s!",
+  "kingdoms.watchtower.unclaimed": "This Watchtower isn't on a kingdom's land, so no one is warned about what its Lookout sees",
+  "kingdoms.watchtower.manned": "A Lookout keeps watch from this Watchtower for %s",
+  "kingdoms.watchtower.unmanned": "No Lookout of %s works at this Watchtower yet"
 }

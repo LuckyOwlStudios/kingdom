@@ -34,9 +34,11 @@ public class KingdomsFabric implements ModInitializer {
         FabricDefaultAttributeRegistry.register(ModEntities.GUIDE.get(), GuideEntity.createAttributes());
 
         ItemGroupEvents.modifyEntriesEvent(CreativeModeTabs.FUNCTIONAL_BLOCKS)
-                .register(entries -> entries.accept(ModItems.TOWN_HALL.get()));
-        ItemGroupEvents.modifyEntriesEvent(CreativeModeTabs.FUNCTIONAL_BLOCKS)
-                .register(entries -> entries.accept(ModItems.TAVERN.get()));
+                .register(entries -> {
+                    entries.accept(ModItems.TOWN_HALL.get());
+                    entries.accept(ModItems.WATCHTOWER.get());
+                    entries.accept(ModItems.TAVERN.get());
+                });
         ItemGroupEvents.modifyEntriesEvent(CreativeModeTabs.SPAWN_EGGS)
                 .register(entries -> entries.accept(ModItems.GUIDE_SPAWN_EGG.get()));
 
