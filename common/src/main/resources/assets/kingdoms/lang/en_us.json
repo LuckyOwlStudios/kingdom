@@ -1,1 +1,7 @@
-{}
+{
+  "block.kingdoms.town_hall": "Town Hall",
+  "container.kingdoms.town_hall": "Town Hall",
+  "entity.kingdoms.guide": "Guide",
+  "item.kingdoms.guide_spawn_egg": "Guide Spawn Egg",
+  "gui.kingdoms.coming_soon": "Coming soon"
+}

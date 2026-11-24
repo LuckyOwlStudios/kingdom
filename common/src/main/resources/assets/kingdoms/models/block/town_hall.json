@@ -1,0 +1,4 @@
+{
+  "parent": "kingdoms:block/townhall",
+  "render_type": "minecraft:cutout"
+}

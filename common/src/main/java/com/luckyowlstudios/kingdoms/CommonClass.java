@@ -1,6 +1,7 @@
 package com.luckyowlstudios.kingdoms;
 
 import com.luckyowlstudios.kingdoms.platform.Services;
+import com.luckyowlstudios.kingdoms.registry.ModRegistry;
 
 /**
  * Shared entry point. Each loader calls {@link #init()} from its own mod initializer.
@@ -13,5 +14,6 @@ public class CommonClass {
                 Constants.MOD_NAME,
                 Services.PLATFORM.getPlatformName(),
                 Services.PLATFORM.getEnvironmentName());
+        ModRegistry.init();
     }
 }
