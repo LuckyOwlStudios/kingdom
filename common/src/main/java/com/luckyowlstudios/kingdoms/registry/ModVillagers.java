@@ -45,6 +45,19 @@ public final class ModVillagers {
                     ImmutableSet.of(), ImmutableSet.of(),
                     SoundEvents.VILLAGER_WORK_CARTOGRAPHER));
 
+    public static final String TAVERN = "tavern";
+    public static final String INNKEEPER = "innkeeper";
+    public static final ResourceKey<PoiType> TAVERN_POI = ResourceKey.create(Registries.POINT_OF_INTEREST_TYPE, Constants.id(TAVERN));
+    public static final Supplier<PoiType> TAVERN_POI_TYPE = Services.REGISTRY.poiType(TAVERN, TOWN_HALL_TICKETS, TOWN_HALL_RANGE, ModBlocks.TAVERN);
+
+    /** Works at a Tavern. An Innkeeper living in a kingdom lets a villager move in at night too (see KingdomTavern). */
+    public static final Supplier<VillagerProfession> INNKEEPER_PROFESSION = Services.REGISTRY.register(BuiltInRegistries.VILLAGER_PROFESSION, INNKEEPER,
+            () -> new VillagerProfession(INNKEEPER,
+                    poi -> poi.is(TAVERN_POI),
+                    poi -> poi.is(TAVERN_POI),
+                    ImmutableSet.of(), ImmutableSet.of(),
+                    SoundEvents.VILLAGER_WORK_BUTCHER));
+
     public static final Supplier<PoiType> SCHOLARS_DESK_POI_TYPE = Services.REGISTRY.poiType(SCHOLARS_DESK, TOWN_HALL_TICKETS, TOWN_HALL_RANGE, ModBlocks.SCHOLARS_DESK);
 
     /** Works at a Scholar's Desk. Scholars living in a kingdom research its perks (see KingdomResearch). */

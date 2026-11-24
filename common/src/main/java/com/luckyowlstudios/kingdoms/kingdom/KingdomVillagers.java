@@ -20,7 +20,7 @@ import java.util.Optional;
 /**
  * Villagers moving into kingdoms. Every morning (when the overworld's day count goes up, so sleeping through the
  * night counts too) each kingdom with a Town Hall and room under its level's villager cap gets one new villager,
- * who appears near the hall. The hall has to be loaded (a player nearby), the same way vanilla villages only grow
+ * who appears near the hall (and with a Tavern, one more at night: see {@link KingdomTavern}). The hall has to be loaded (a player nearby), the same way vanilla villages only grow
  * while loaded. Server side only.
  */
 public final class KingdomVillagers {
@@ -37,6 +37,7 @@ public final class KingdomVillagers {
 
     /** Called every server tick by each loader. Looks once a second for a new day. */
     public static void tick(MinecraftServer server) {
+        KingdomTavern.tick(server);
         KingdomCelebration.tick(server);
         KingdomResearch.tick(server);
         Watchtowers.tick(server);
@@ -69,6 +70,16 @@ public final class KingdomVillagers {
      * @return the villager who moved in, if one did
      */
     public static Optional<Villager> morning(MinecraftServer server, Kingdom kingdom) {
+        return moveIn(server, kingdom, "kingdoms.kingdom.villager_arrived");
+    }
+
+    /**
+     * If the kingdom has a Town Hall that's loaded and room for another villager, one moves in next to the hall and
+     * the members are told with {@code message} (given the kingdom's name, villager count and cap).
+     *
+     * @return the villager who moved in, if one did
+     */
+    static Optional<Villager> moveIn(MinecraftServer server, Kingdom kingdom, String message) {
         KingdomLevel level = kingdom.levelInfo();
         if (kingdom.residents().size() >= level.villagerCap() || kingdom.townHall().isEmpty()) {
             return Optional.empty();
@@ -91,7 +102,7 @@ public final class KingdomVillagers {
             return Optional.empty();
         }
         KingdomData.get(server).addResident(kingdom, villager.getUUID());
-        Kingdoms.broadcast(server, kingdom, Component.translatable("kingdoms.kingdom.villager_arrived",
+        Kingdoms.broadcast(server, kingdom, Component.translatable(message,
                 kingdom.displayName(), kingdom.residents().size(), level.villagerCap()));
         return Optional.of(villager);
     }

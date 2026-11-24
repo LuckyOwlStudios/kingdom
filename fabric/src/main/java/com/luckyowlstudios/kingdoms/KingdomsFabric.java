@@ -38,6 +38,7 @@ public class KingdomsFabric implements ModInitializer {
                     entries.accept(ModItems.TOWN_HALL.get());
                     entries.accept(ModItems.SCHOLARS_DESK.get());
                     entries.accept(ModItems.WATCHTOWER.get());
+                    entries.accept(ModItems.TAVERN.get());
                 });
         ItemGroupEvents.modifyEntriesEvent(CreativeModeTabs.SPAWN_EGGS)
                 .register(entries -> entries.accept(ModItems.GUIDE_SPAWN_EGG.get()));

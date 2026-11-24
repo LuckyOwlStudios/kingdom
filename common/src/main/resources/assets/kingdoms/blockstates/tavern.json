@@ -1,0 +1,19 @@
+{
+  "variants": {
+    "facing=north": {
+      "model": "kingdoms:block/tavern"
+    },
+    "facing=east": {
+      "model": "kingdoms:block/tavern",
+      "y": 90
+    },
+    "facing=south": {
+      "model": "kingdoms:block/tavern",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "kingdoms:block/tavern",
+      "y": 270
+    }
+  }
+}

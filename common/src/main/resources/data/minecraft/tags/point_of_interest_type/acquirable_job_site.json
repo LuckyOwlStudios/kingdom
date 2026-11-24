@@ -1,6 +1,7 @@
 {
   "values": [
     "kingdoms:town_hall",
+    "kingdoms:tavern",
     "kingdoms:scholars_desk",
     "kingdoms:watchtower"
   ]
