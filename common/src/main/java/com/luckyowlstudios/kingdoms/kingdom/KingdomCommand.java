@@ -52,6 +52,7 @@ public final class KingdomCommand {
                                 .executes(KingdomCommand::kick)))
                 .then(Commands.literal("leave")
                         .executes(context -> result(Kingdoms.leave(context.getSource().getPlayerOrException()))))
+                .then(DiplomacyCommand.build())
                 .then(Commands.literal("banner")
                         .executes(context -> {
                             ServerPlayer player = context.getSource().getPlayerOrException();

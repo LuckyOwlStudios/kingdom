@@ -139,6 +139,7 @@ public final class KingdomData extends SavedData {
             kingdom.mutableClaims().forEach(chunk -> this.claimOwners.remove(chunk, kingdom.id()));
             kingdom.mutableClaims().clear();
             KingdomTeams.remove(server, kingdom);
+            Diplomacy.onDisbanded(server, kingdom);
             return true;
         }
         kingdom.mutableOfficers().remove(player);

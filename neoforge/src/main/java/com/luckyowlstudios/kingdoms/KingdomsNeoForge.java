@@ -2,10 +2,13 @@ package com.luckyowlstudios.kingdoms;
 
 import com.luckyowlstudios.kingdoms.client.KingdomsClient;
 import com.luckyowlstudios.kingdoms.entity.GuideEntity;
+import com.luckyowlstudios.kingdoms.kingdom.Diplomacy;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomCommand;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomScreens;
 import com.luckyowlstudios.kingdoms.kingdom.Kingdoms;
 import com.luckyowlstudios.kingdoms.network.CreateKingdomPayload;
+import com.luckyowlstudios.kingdoms.network.DiplomacyActionPayload;
+import com.luckyowlstudios.kingdoms.network.DiplomacyViewPayload;
 import com.luckyowlstudios.kingdoms.network.KingdomActionPayload;
 import com.luckyowlstudios.kingdoms.network.KingdomViewPayload;
 import com.luckyowlstudios.kingdoms.network.OpenCreateKingdomPayload;
@@ -59,6 +62,10 @@ public class KingdomsNeoForge {
                 (payload, context) -> KingdomsClient.handle(payload));
         registrar.playToServer(KingdomActionPayload.TYPE, KingdomActionPayload.STREAM_CODEC,
                 (payload, context) -> KingdomScreens.handle((ServerPlayer) context.player(), payload));
+        registrar.playToClient(DiplomacyViewPayload.TYPE, DiplomacyViewPayload.STREAM_CODEC,
+                (payload, context) -> KingdomsClient.handle(payload));
+        registrar.playToServer(DiplomacyActionPayload.TYPE, DiplomacyActionPayload.STREAM_CODEC,
+                (payload, context) -> Diplomacy.handle((ServerPlayer) context.player(), payload));
     }
 
     private static void registerCommands(RegisterCommandsEvent event) {
