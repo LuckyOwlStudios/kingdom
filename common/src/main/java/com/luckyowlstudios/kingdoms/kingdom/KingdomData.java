@@ -203,7 +203,7 @@ public final class KingdomData extends SavedData {
         KingdomTeams.sync(server, kingdom);
     }
 
-    void setMap(Kingdom kingdom, net.minecraft.world.level.saveddata.maps.MapId map) {
+    void setMap(Kingdom kingdom, KingdomMap map) {
         kingdom.setMap(map);
         this.setDirty();
     }

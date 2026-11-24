@@ -269,15 +269,23 @@ public class KingdomsGameTests implements FabricGameTest {
         leader.moveTo(hall.getX() + 1.5, hall.getY(), hall.getZ() + 0.5);
         leader.setGameMode(net.minecraft.world.level.GameType.SURVIVAL); // creative players keep their maps
         Kingdom kingdom = Kingdoms.tryCreate(leader, new CreateKingdomPayload(hall, "Mapton " + helper.getLevel().getGameTime(), DyeColor.YELLOW)).orElseThrow();
-        helper.assertTrue(KingdomMaps.scale(leader, kingdom) == 0, "map should start at scale 0");
+        helper.assertTrue(KingdomMaps.radius(leader, kingdom) == 0, "map should start as a single map");
         ItemStack maps = new ItemStack(net.minecraft.world.item.Items.MAP, 5);
         for (int i = 0; i < 5; i++) {
             KingdomMaps.grow(leader, kingdom, maps);
         }
-        helper.assertTrue(KingdomMaps.scale(leader, kingdom) == KingdomMaps.MAX_SCALE, "map didn't grow to the max");
-        var data = KingdomMaps.getOrCreate(leader, kingdom).orElseThrow();
-        helper.assertTrue(data.centerX == hall.getX() && data.centerZ == hall.getZ(),
-                "map should be centred on the town hall " + hall + ", not " + data.centerX + ", " + data.centerZ);
+        helper.assertTrue(KingdomMaps.radius(leader, kingdom) == KingdomMaps.MAX_RADIUS, "map didn't grow to the max");
+        var map = KingdomMaps.getOrCreate(leader, kingdom).orElseThrow();
+        int width = KingdomMaps.MAX_RADIUS * 2 + 1;
+        helper.assertTrue(map.tiles().size() == width * width, "should be a " + width + "x" + width + " grid, got " + map.tiles().size() + " maps");
+        for (var tile : map.tiles()) {
+            var data = helper.getLevel().getMapData(tile.id());
+            helper.assertTrue(data != null && data.scale == 0, "growing the map shouldn't zoom it out");
+            int x = hall.getX() + tile.x() * 128;
+            int z = hall.getZ() + tile.z() * 128;
+            helper.assertTrue(data.centerX == x && data.centerZ == z,
+                    "map " + tile.x() + ", " + tile.z() + " should be centred on " + x + ", " + z + ", not " + data.centerX + ", " + data.centerZ);
+        }
         helper.assertTrue(maps.getCount() == 1, "should use one empty map per step, " + maps.getCount() + " left");
         KingdomMaps.explore(leader);
         KingdomScreens.open(leader, kingdom);

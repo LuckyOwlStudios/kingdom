@@ -12,15 +12,20 @@ import net.minecraft.world.item.MapItem;
 import net.minecraft.world.level.saveddata.maps.MapId;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 /**
- * Each kingdom has a map centred on its Town Hall, like a vanilla map. Members fill it in as they walk around,
- * and giving the Town Hall an empty map zooms it out one step, up to vanilla's largest scale.
+ * Each kingdom has a map around its Town Hall ({@link KingdomMap}): a grid of full-detail vanilla maps that members
+ * fill in as they walk around. Giving the Town Hall an empty map adds a ring of maps around the edge, so the map
+ * covers more land without losing detail, up to {@link #MAX_RADIUS} rings.
  */
 public final class KingdomMaps {
 
-    public static final int MAX_SCALE = 4;
+    public static final int MAX_RADIUS = 4;
+    /** How far from a member, in blocks, a vanilla map at full detail fills itself in. */
+    private static final int EXPLORE_REACH = 128;
 
     private KingdomMaps() {
     }
@@ -29,78 +34,115 @@ public final class KingdomMaps {
         return kingdom.townHall().map(hall -> player.server.getLevel(hall.dimension()));
     }
 
-    /** The kingdom's map data, made at the smallest scale the first time it's needed. */
-    public static Optional<MapItemSavedData> getOrCreate(ServerPlayer player, Kingdom kingdom) {
-        Optional<ServerLevel> level = hallLevel(player, kingdom);
-        if (level.isEmpty() || kingdom.townHall().isEmpty()) {
+    /**
+     * The kingdom's map, with every map of the grid made and centred on the current Town Hall. Made the first time
+     * it's needed, and remade if the Town Hall moved.
+     */
+    public static Optional<KingdomMap> getOrCreate(ServerPlayer player, Kingdom kingdom) {
+        Optional<ServerLevel> found = hallLevel(player, kingdom);
+        if (found.isEmpty() || kingdom.townHall().isEmpty()) {
             return Optional.empty();
         }
-        if (kingdom.map().isPresent()) {
-            MapItemSavedData data = level.get().getMapData(kingdom.map().get());
-            GlobalPos hall = kingdom.townHall().get();
-            if (data != null && data.centerX == hall.pos().getX() && data.centerZ == hall.pos().getZ()) {
-                return Optional.of(data);
-            }
-            if (data != null) {
-                // Made before maps were centred on the Town Hall: start again at the same size, centred properly.
-                create(player, kingdom, level.get(), hall, data.scale);
-                return kingdom.map().map(id -> level.get().getMapData(id));
+        ServerLevel level = found.get();
+        GlobalPos hall = kingdom.townHall().get();
+        KingdomMap map = kingdom.map();
+        int radius = map.radius();
+        if (map.legacy().isPresent()) {
+            // An old save's single map, which zoomed out to grow: keep its size as rings of full-detail maps.
+            MapItemSavedData old = level.getMapData(map.legacy().get());
+            radius = old == null ? 0 : Math.min(old.scale, MAX_RADIUS);
+        }
+        List<KingdomMap.Tile> tiles = new ArrayList<>();
+        boolean changed = map.legacy().isPresent() || radius != map.radius();
+        for (int z = -radius; z <= radius; z++) {
+            for (int x = -radius; x <= radius; x++) {
+                int centerX = hall.pos().getX() + x * KingdomMap.TILE_SIZE;
+                int centerZ = hall.pos().getZ() + z * KingdomMap.TILE_SIZE;
+                Optional<MapId> id = map.tile(x, z).filter(existing -> {
+                    MapItemSavedData data = level.getMapData(existing);
+                    return data != null && data.centerX == centerX && data.centerZ == centerZ && data.scale == 0;
+                });
+                if (id.isEmpty()) {
+                    id = Optional.of(create(level, centerX, centerZ));
+                    changed = true;
+                }
+                tiles.add(new KingdomMap.Tile(x, z, id.get()));
             }
         }
-        create(player, kingdom, level.get(), kingdom.townHall().get(), (byte) 0);
-        return kingdom.map().map(id -> level.get().getMapData(id));
+        if (changed || tiles.size() != map.tiles().size()) {
+            map = new KingdomMap(radius, List.copyOf(tiles), Optional.empty());
+            KingdomData.get(player.server).setMap(kingdom, map);
+        }
+        return Optional.of(map);
     }
 
-    private static void create(ServerPlayer player, Kingdom kingdom, ServerLevel level, GlobalPos hall, byte scale) {
+    private static MapId create(ServerLevel level, int centerX, int centerZ) {
         // Not MapItem.create: vanilla snaps a map's centre to a world-wide grid, which would leave the Town Hall
-        // off in a corner and make the map grow lopsided. Kingdom maps are centred exactly on the hall instead.
-        MapItemSavedData data = MapItemSavedDataAccessor.kingdoms$create(hall.pos().getX(), hall.pos().getZ(), scale,
+        // off-centre. Kingdom maps are laid out exactly around the hall instead.
+        MapItemSavedData data = MapItemSavedDataAccessor.kingdoms$create(centerX, centerZ, (byte) 0,
                 true, false, false, level.dimension());
         MapId id = level.getFreeMapId();
         level.setMapData(id, data);
-        KingdomData.get(player.server).setMap(kingdom, id);
+        return id;
     }
 
-    public static int scale(ServerPlayer player, Kingdom kingdom) {
-        return getOrCreate(player, kingdom).map(data -> (int) data.scale).orElse(0);
+    /** How many rings of maps surround the middle one. */
+    public static int radius(ServerPlayer player, Kingdom kingdom) {
+        return getOrCreate(player, kingdom).map(KingdomMap::radius).orElse(0);
     }
 
-    /** A member handed the Town Hall an empty map. Uses it up and zooms the kingdom map out one step. */
+    /** A member handed the Town Hall an empty map. Uses it up and adds a ring of maps around the kingdom map. */
     public static boolean grow(ServerPlayer player, Kingdom kingdom, ItemStack emptyMap) {
         if (!emptyMap.is(Items.MAP) || kingdom.townHall().isEmpty()) {
             return false;
         }
-        Optional<MapItemSavedData> data = getOrCreate(player, kingdom);
-        Optional<ServerLevel> level = hallLevel(player, kingdom);
-        if (data.isEmpty() || level.isEmpty()) {
+        Optional<KingdomMap> map = getOrCreate(player, kingdom);
+        if (map.isEmpty()) {
             return false;
         }
-        if (data.get().scale >= MAX_SCALE) {
+        if (map.get().radius() >= MAX_RADIUS) {
             player.displayClientMessage(Component.translatable("kingdoms.kingdom.map.max"), true);
             return true;
         }
-        int newScale = data.get().scale + 1;
-        create(player, kingdom, level.get(), kingdom.townHall().get(), (byte) newScale);
+        int radius = map.get().radius() + 1;
+        KingdomData.get(player.server).setMap(kingdom, new KingdomMap(radius, map.get().tiles(), Optional.empty()));
+        getOrCreate(player, kingdom); // makes the new ring
         emptyMap.consume(1, player);
-        player.displayClientMessage(Component.translatable("kingdoms.kingdom.map.grown", newScale, MAX_SCALE), true);
+        player.displayClientMessage(Component.translatable("kingdoms.kingdom.map.grown", radius, MAX_RADIUS), true);
         return true;
     }
 
-    /** Fills in the map around a member, the same way holding a vanilla map does. Called about once a second. */
+    /** Fills in the maps near a member, the same way holding a vanilla map does. Called about once a second. */
     public static void explore(ServerPlayer player) {
         Kingdoms.ofPlayer(player).ifPresent(kingdom -> kingdom.townHall()
                 .filter(hall -> hall.dimension() == player.level().dimension())
-                .flatMap(hall -> getOrCreate(player, kingdom))
-                .ifPresent(data -> ((MapItem) Items.FILLED_MAP).update(player.level(), player, data)));
+                .ifPresent(hall -> getOrCreate(player, kingdom).ifPresent(map -> {
+                    ServerLevel level = player.serverLevel();
+                    for (KingdomMap.Tile tile : map.tiles()) {
+                        MapItemSavedData data = level.getMapData(tile.id());
+                        // Only the maps close enough for the member to fill in any of.
+                        int reach = EXPLORE_REACH + KingdomMap.TILE_SIZE / 2;
+                        if (data != null && Math.abs(player.getX() - data.centerX) < reach && Math.abs(player.getZ() - data.centerZ) < reach) {
+                            ((MapItem) Items.FILLED_MAP).update(level, player, data);
+                        }
+                    }
+                })));
     }
 
-    /** Sends the map's pixels to a player about to look at it in the Town Hall screen. */
+    /** Sends the maps' pixels to a player about to look at them in the Town Hall screen. */
     public static void sendTo(ServerPlayer player, Kingdom kingdom) {
-        kingdom.map().ifPresent(id -> getOrCreate(player, kingdom).ifPresent(data -> {
-            data.getHoldingPlayer(player);
-            Packet<?> packet = data.getUpdatePacket(id, player);
-            if (packet != null) {
-                player.connection.send(packet);
+        Optional<ServerLevel> level = hallLevel(player, kingdom);
+        getOrCreate(player, kingdom).ifPresent(map -> level.ifPresent(found -> {
+            for (KingdomMap.Tile tile : map.tiles()) {
+                MapItemSavedData data = found.getMapData(tile.id());
+                if (data == null) {
+                    continue;
+                }
+                data.getHoldingPlayer(player);
+                Packet<?> packet = data.getUpdatePacket(tile.id(), player);
+                if (packet != null) {
+                    player.connection.send(packet);
+                }
             }
         }));
     }
