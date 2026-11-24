@@ -35,6 +35,7 @@ public final class KingdomVillagers {
 
     /** Called every server tick by each loader. Looks once a second for a new day. */
     public static void tick(MinecraftServer server) {
+        KingdomCelebration.tick(server);
         if (server.getTickCount() % 20 != 0) {
             return;
         }

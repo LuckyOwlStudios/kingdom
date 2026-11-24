@@ -4,6 +4,7 @@ import com.luckyowlstudios.kingdoms.block.entity.TownHallBlockEntity;
 import com.luckyowlstudios.kingdoms.kingdom.ChunkClaim;
 import com.luckyowlstudios.kingdoms.kingdom.Kingdom;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomData;
+import com.luckyowlstudios.kingdoms.kingdom.KingdomCelebration;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomLevel;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomVillagers;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomMaps;
@@ -289,18 +290,24 @@ public class KingdomsGameTests implements FabricGameTest {
         BlockPos hall = isolatedHall(helper);
         ServerPlayer leader = helper.makeMockServerPlayerInLevel();
         leader.moveTo(hall.getX() + 1.5, hall.getY(), hall.getZ() + 0.5);
-        leader.setGameMode(net.minecraft.world.level.GameType.SURVIVAL); // creative players level up for free
-        Kingdom kingdom = Kingdoms.tryCreate(leader, new CreateKingdomPayload(hall, "Levelburg " + level.getGameTime(), DyeColor.LIME)).orElseThrow();
+                Kingdom kingdom = Kingdoms.tryCreate(leader, new CreateKingdomPayload(hall, "Levelburg " + level.getGameTime(), DyeColor.LIME)).orElseThrow();
         helper.assertTrue(kingdom.level() == 1 && kingdom.claims().size() == KingdomLevel.of(1).landCap(),
                 "new kingdom should be level 1 with " + KingdomLevel.of(1).landCap() + " chunks, got level " + kingdom.level() + ", " + kingdom.claims().size());
 
-        // Not enough emeralds: nothing happens.
-        helper.assertFalse(Kingdoms.levelUp(leader), "levelled up without paying");
-        int cost = KingdomLevel.of(2).cost();
-        leader.getInventory().add(new ItemStack(KingdomLevel.CURRENCY, cost + 3));
-        helper.assertTrue(Kingdoms.levelUp(leader), "couldn't level up with " + cost + " emeralds");
-        helper.assertTrue(kingdom.level() == 2, "should be level 2");
-        helper.assertTrue(leader.getInventory().countItem(KingdomLevel.CURRENCY) == 3, "should have paid " + cost + " emeralds");
+        // A member gaining experience gives the kingdom the same XP; not quite enough isn't a level.
+        int needed = KingdomLevel.of(2).xp();
+        leader.giveExperiencePoints(needed - 1);
+        helper.assertTrue(kingdom.level() == 1 && kingdom.xp() == needed - 1, "kingdom should have " + (needed - 1) + " XP at level 1, got "
+                + kingdom.xp() + " at level " + kingdom.level());
+        helper.assertTrue(!KingdomCelebration.isCelebrating(kingdom), "celebrating before levelling up");
+        leader.giveExperiencePoints(6);
+        helper.assertTrue(kingdom.level() == 2, "should be level 2 after " + (needed + 5) + " XP");
+        helper.assertTrue(kingdom.xp() == 5, "leftover XP should carry over, got " + kingdom.xp());
+        helper.assertTrue(KingdomCelebration.isCelebrating(kingdom), "levelling up didn't start a celebration");
+        helper.assertTrue(KingdomLevel.of(3).xp() > KingdomLevel.of(2).xp(), "each level should take more XP than the last");
+        // Losing experience doesn't take kingdom XP away.
+        leader.giveExperiencePoints(-3);
+        helper.assertTrue(kingdom.xp() == 5, "lost experience changed kingdom XP");
         helper.assertTrue(kingdom.claims().size() == KingdomLevel.of(2).landCap(), "land didn't grow to " + KingdomLevel.of(2).landCap()
                 + " chunks, got " + kingdom.claims().size());
         ChunkClaim center = ChunkClaim.of(GlobalPos.of(level.dimension(), hall));
@@ -309,7 +316,8 @@ public class KingdomsGameTests implements FabricGameTest {
                 "the ring around the town hall wasn't claimed");
         var view = KingdomScreens.view(leader, kingdom);
         helper.assertTrue(view.growth().level() == 2 && view.growth().landCap() == KingdomLevel.of(2).landCap()
-                && view.growth().villagerCap() == KingdomLevel.of(2).villagerCap(), "screen got the wrong caps: " + view.growth());
+                && view.growth().villagerCap() == KingdomLevel.of(2).villagerCap()
+                && view.growth().xp() == 5 && view.growth().xpToNext() == KingdomLevel.of(3).xp(), "screen got the wrong growth: " + view.growth());
 
         // Villagers only move in while the Town Hall is loaded; nobody is near this one.
         helper.assertTrue(KingdomVillagers.morning(level.getServer(), kingdom).isEmpty(), "a villager moved into an unloaded kingdom");

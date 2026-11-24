@@ -359,41 +359,24 @@ public final class Kingdoms {
 
     // ---- Levels ----
 
-    /**
-     * The leader pays to raise the kingdom a level, which lets more villagers move in and grows its land.
-     * For now the price is emeralds from their inventory (see {@link KingdomLevel#LEVELS}); creative players don't pay.
-     */
-    public static boolean levelUp(ServerPlayer leader) {
-        Optional<Kingdom> found = ledBy(leader);
-        if (found.isEmpty()) {
-            return false;
-        }
-        Kingdom kingdom = found.get();
-        if (kingdom.levelInfo().isMax()) {
-            tell(leader, "kingdoms.kingdom.level.max", kingdom.displayName());
-            return false;
-        }
-        KingdomLevel next = KingdomLevel.of(kingdom.level() + 1);
-        if (!leader.getAbilities().instabuild) {
-            var inventory = leader.getInventory();
-            int held = inventory.countItem(KingdomLevel.CURRENCY);
-            if (held < next.cost()) {
-                tell(leader, "kingdoms.kingdom.level.cannot_afford", next.cost(), KingdomLevel.CURRENCY.getDescription(), next.level());
-                return false;
-            }
-            inventory.clearOrCountMatchingItems(stack -> stack.is(KingdomLevel.CURRENCY), next.cost(), leader.inventoryMenu.getCraftSlots());
-            leader.containerMenu.broadcastChanges();
-        }
-        setLevel(leader.server, kingdom, next.level());
-        return true;
-    }
-
     /** Sets a kingdom's level outright (the operator command), growing or shrinking its land, and tells its members. */
     public static void setLevel(MinecraftServer server, Kingdom kingdom, int level) {
+        int before = kingdom.level();
         KingdomData.get(server).setLevel(kingdom, level);
+        onLevelChanged(server, kingdom, before);
+    }
+
+    /** Tells the members about a new level, and throws a celebration at the Town Hall if it went up. */
+    static void onLevelChanged(MinecraftServer server, Kingdom kingdom, int before) {
+        if (kingdom.level() == before) {
+            return;
+        }
         KingdomLevel info = kingdom.levelInfo();
         broadcast(server, kingdom, Component.translatable("kingdoms.kingdom.level.reached", kingdom.displayName(),
                 info.level(), info.villagerCap(), info.landCap()));
+        if (kingdom.level() > before) {
+            KingdomCelebration.start(kingdom);
+        }
     }
 
     /** A Town Hall block was removed. Its kingdom carries on, without a seat until it gets a new one. */

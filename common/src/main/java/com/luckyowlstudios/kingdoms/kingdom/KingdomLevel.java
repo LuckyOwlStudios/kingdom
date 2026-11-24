@@ -1,8 +1,5 @@
 package com.luckyowlstudios.kingdoms.kingdom;
 
-import net.minecraft.world.item.Item;
-import net.minecraft.world.item.Items;
-
 import java.util.List;
 
 /**
@@ -12,19 +9,17 @@ import java.util.List;
  * @param level       the level number, from 1
  * @param villagerCap how many villagers can live in the kingdom at this level
  * @param claimRadius how many chunks out from the Town Hall's chunk the kingdom's land reaches (0 is the hall's chunk alone)
- * @param cost        how many {@link #CURRENCY} it costs to reach this level from the one before
+ * @param xp          how much kingdom XP it takes to reach this level from the one before. Members earn kingdom XP
+ *                    whenever they gain experience (see {@link KingdomXp})
  */
-public record KingdomLevel(int level, int villagerCap, int claimRadius, int cost) {
-
-    /** What levelling up is paid in, for now. */
-    public static final Item CURRENCY = Items.EMERALD;
+public record KingdomLevel(int level, int villagerCap, int claimRadius, int xp) {
 
     public static final List<KingdomLevel> LEVELS = List.of(
             new KingdomLevel(1, 2, 0, 0),
-            new KingdomLevel(2, 4, 1, 16),
-            new KingdomLevel(3, 7, 2, 32),
-            new KingdomLevel(4, 10, 3, 48),
-            new KingdomLevel(5, 15, 4, 64));
+            new KingdomLevel(2, 4, 1, 100),
+            new KingdomLevel(3, 7, 2, 250),
+            new KingdomLevel(4, 10, 3, 500),
+            new KingdomLevel(5, 15, 4, 1000));
 
     public static final int MAX_LEVEL = LEVELS.size();
 
@@ -37,6 +32,11 @@ public record KingdomLevel(int level, int villagerCap, int claimRadius, int cost
     public int landCap() {
         int side = 2 * this.claimRadius + 1;
         return side * side;
+    }
+
+    /** XP needed to go from this level to the next, or 0 at the top. */
+    public int xpToNext() {
+        return this.isMax() ? 0 : of(this.level + 1).xp();
     }
 
     public boolean isMax() {
