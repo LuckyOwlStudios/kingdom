@@ -1,9 +1,11 @@
 package com.luckyowlstudios.kingdoms;
 
+import com.luckyowlstudios.kingdoms.block.entity.TownHallBlockEntity;
 import com.luckyowlstudios.kingdoms.entity.GuideEntity;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomCommand;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomScreens;
 import com.luckyowlstudios.kingdoms.kingdom.Kingdoms;
+import com.luckyowlstudios.kingdoms.network.CloseTownHallPayload;
 import com.luckyowlstudios.kingdoms.network.CreateKingdomPayload;
 import com.luckyowlstudios.kingdoms.network.KingdomActionPayload;
 import com.luckyowlstudios.kingdoms.network.KingdomViewPayload;
@@ -40,9 +42,12 @@ public class KingdomsFabric implements ModInitializer {
         PayloadTypeRegistry.playC2S().register(CreateKingdomPayload.TYPE, CreateKingdomPayload.STREAM_CODEC);
         PayloadTypeRegistry.playS2C().register(KingdomViewPayload.TYPE, KingdomViewPayload.STREAM_CODEC);
         PayloadTypeRegistry.playC2S().register(KingdomActionPayload.TYPE, KingdomActionPayload.STREAM_CODEC);
+        PayloadTypeRegistry.playC2S().register(CloseTownHallPayload.TYPE, CloseTownHallPayload.STREAM_CODEC);
         ServerPlayNetworking.registerGlobalReceiver(KingdomActionPayload.TYPE,
                 (payload, context) -> KingdomScreens.handle(context.player(), payload));
         ServerPlayNetworking.registerGlobalReceiver(CreateKingdomPayload.TYPE,
                 (payload, context) -> Kingdoms.tryCreate(context.player(), payload));
+        ServerPlayNetworking.registerGlobalReceiver(CloseTownHallPayload.TYPE,
+                (payload, context) -> TownHallBlockEntity.onScreenClosed(context.player(), payload.townHall()));
     }
 }

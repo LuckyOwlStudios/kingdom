@@ -3,6 +3,7 @@ package com.luckyowlstudios.kingdoms.block;
 import com.luckyowlstudios.kingdoms.block.entity.TownHallBlockEntity;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomMaps;
 import com.luckyowlstudios.kingdoms.kingdom.Kingdoms;
+import com.luckyowlstudios.kingdoms.registry.ModBlockEntities;
 import com.mojang.serialization.MapCodec;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -25,6 +26,8 @@ import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityTicker;
+import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.DirectionProperty;
@@ -121,5 +124,14 @@ public class TownHallBlock extends BaseEntityBlock {
     @Override
     public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
         return new TownHallBlockEntity(pos, state);
+    }
+
+    @Nullable
+    @Override
+    public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level level, BlockState state, BlockEntityType<T> type) {
+        if (level.isClientSide) {
+            return createTickerHelper(type, ModBlockEntities.TOWN_HALL.get(), TownHallBlockEntity::clientTick);
+        }
+        return createTickerHelper(type, ModBlockEntities.TOWN_HALL.get(), TownHallBlockEntity::serverTick);
     }
 }
