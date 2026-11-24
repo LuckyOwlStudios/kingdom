@@ -1,5 +1,6 @@
 package com.luckyowlstudios.kingdoms.test;
 
+import com.luckyowlstudios.kingdoms.block.entity.TownHallBlockEntity;
 import com.luckyowlstudios.kingdoms.kingdom.ChunkClaim;
 import com.luckyowlstudios.kingdoms.kingdom.Kingdom;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomData;
@@ -106,6 +107,34 @@ public class KingdomsGameTests implements FabricGameTest {
                 "a player founded a second kingdom");
         helper.assertTrue(Kingdoms.tryCreate(other, new CreateKingdomPayload(hall2, name + " II", DyeColor.BLUE)).isPresent(),
                 "second player couldn't found their own kingdom at a new town hall");
+        helper.succeed();
+    }
+
+    @GameTest(template = EMPTY_STRUCTURE)
+    public void townHallShowsItsKingdom(GameTestHelper helper) {
+        BlockPos hall = isolatedHall(helper);
+        TownHallBlockEntity entity = (TownHallBlockEntity) helper.getLevel().getBlockEntity(hall);
+        helper.assertTrue(entity != null, "town hall has no block entity");
+        entity.refresh();
+        helper.assertFalse(entity.hasKingdom(), "a free town hall shows a kingdom");
+
+        ServerPlayer leader = helper.makeMockServerPlayerInLevel();
+        leader.moveTo(hall.getX() + 1.5, hall.getY(), hall.getZ() + 0.5);
+        Kingdoms.tryCreate(leader, new CreateKingdomPayload(hall, "Bookham " + helper.getLevel().getGameTime(), DyeColor.CYAN)).orElseThrow();
+        helper.assertTrue(entity.kingdomColor() == DyeColor.CYAN, "town hall didn't pick up its new kingdom's colour");
+        Kingdoms.setColor(leader, DyeColor.LIME);
+        helper.assertTrue(entity.kingdomColor() == DyeColor.LIME, "town hall didn't follow the kingdom's new colour");
+
+        helper.assertFalse(entity.isBookOpen(), "book is open with nobody reading");
+        TownHallBlockEntity.onScreenOpened(leader, hall);
+        helper.assertTrue(entity.isBookOpen(), "book didn't open with the Town Hall screen");
+        TownHallBlockEntity.onScreenClosed(leader, hall);
+        helper.assertFalse(entity.isBookOpen(), "book didn't close with the Town Hall screen");
+
+        TownHallBlockEntity.onScreenOpened(leader, hall);
+        Kingdoms.leave(leader);
+        helper.assertFalse(entity.hasKingdom(), "town hall still shows a disbanded kingdom");
+        helper.assertFalse(entity.isBookOpen(), "book stayed open after the kingdom disbanded");
         helper.succeed();
     }
 

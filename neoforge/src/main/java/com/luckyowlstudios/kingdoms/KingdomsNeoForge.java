@@ -1,11 +1,13 @@
 package com.luckyowlstudios.kingdoms;
 
+import com.luckyowlstudios.kingdoms.block.entity.TownHallBlockEntity;
 import com.luckyowlstudios.kingdoms.client.KingdomsClient;
 import com.luckyowlstudios.kingdoms.entity.GuideEntity;
 import com.luckyowlstudios.kingdoms.kingdom.Diplomacy;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomCommand;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomScreens;
 import com.luckyowlstudios.kingdoms.kingdom.Kingdoms;
+import com.luckyowlstudios.kingdoms.network.CloseTownHallPayload;
 import com.luckyowlstudios.kingdoms.network.CreateKingdomPayload;
 import com.luckyowlstudios.kingdoms.network.DiplomacyActionPayload;
 import com.luckyowlstudios.kingdoms.network.DiplomacyViewPayload;
@@ -66,6 +68,8 @@ public class KingdomsNeoForge {
                 (payload, context) -> KingdomsClient.handle(payload));
         registrar.playToServer(DiplomacyActionPayload.TYPE, DiplomacyActionPayload.STREAM_CODEC,
                 (payload, context) -> Diplomacy.handle((ServerPlayer) context.player(), payload));
+        registrar.playToServer(CloseTownHallPayload.TYPE, CloseTownHallPayload.STREAM_CODEC,
+                (payload, context) -> TownHallBlockEntity.onScreenClosed((ServerPlayer) context.player(), payload.townHall()));
     }
 
     private static void registerCommands(RegisterCommandsEvent event) {
