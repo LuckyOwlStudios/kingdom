@@ -40,6 +40,11 @@ public final class Kingdoms {
         return KingdomData.get(server).atTownHall(pos);
     }
 
+    /** The kingdom that has claimed the chunk this block is in, if any. */
+    public static Optional<Kingdom> claimedBy(MinecraftServer server, GlobalPos pos) {
+        return KingdomData.get(server).claimedBy(ChunkClaim.of(pos));
+    }
+
     /** A player right-clicked a Town Hall. */
     public static void onTownHallUsed(ServerPlayer player, BlockPos pos) {
         GlobalPos hall = GlobalPos.of(player.level().dimension(), pos);
@@ -57,8 +62,14 @@ public final class Kingdoms {
             return;
         }
         Optional<Kingdom> own = ofPlayer(player);
+        Optional<Kingdom> landOwner = claimedBy(player.server, hall).filter(other -> own.map(k -> k != other).orElse(true));
+        if (landOwner.isPresent()) {
+            // Another kingdom's land: no founding or moving in here.
+            player.displayClientMessage(Component.translatable("kingdoms.kingdom.chunk_claimed", landOwner.get().displayName()), true);
+            return;
+        }
         if (own.isPresent() && own.get().townHall().isEmpty() && own.get().isLeader(player.getUUID())) {
-            // A kingdom that lost its Town Hall can take this one as its new seat.
+            // A kingdom that lost its Town Hall can take this one as its new seat, along with the chunk it's in.
             KingdomData.get(player.server).setTownHall(own.get(), hall);
             player.displayClientMessage(Component.translatable("kingdoms.kingdom.town_hall_claimed", own.get().displayName()), true);
             return;
@@ -90,6 +101,11 @@ public final class Kingdoms {
         }
         if (data.atTownHall(hall).isPresent() || data.ofPlayer(player.getUUID()).isPresent()) {
             player.displayClientMessage(Component.translatable("kingdoms.kingdom.cannot_found"), false);
+            return Optional.empty();
+        }
+        Optional<Kingdom> landOwner = data.claimedBy(ChunkClaim.of(hall));
+        if (landOwner.isPresent()) {
+            player.displayClientMessage(Component.translatable("kingdoms.kingdom.chunk_claimed", landOwner.get().displayName()), false);
             return Optional.empty();
         }
         Optional<String> name = cleanName(request.name());

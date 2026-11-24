@@ -1,5 +1,6 @@
 package com.luckyowlstudios.kingdoms.test;
 
+import com.luckyowlstudios.kingdoms.kingdom.ChunkClaim;
 import com.luckyowlstudios.kingdoms.kingdom.Kingdom;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomData;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomMaps;
@@ -15,6 +16,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.GlobalPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.npc.Villager;
@@ -22,12 +24,27 @@ import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Server-side checks run in CI with {@code ./gradlew :fabric:runGametest}. They only run when the
  * {@code fabric-api.gametest} system property is set, never in normal play.
  */
 public class KingdomsGameTests implements FabricGameTest {
+
+    private static final AtomicInteger NEXT_HALL = new AtomicInteger();
+
+    /**
+     * Places a Town Hall in a chunk of its own, well away from the test structures (which sit close together and run
+     * at the same time), so kingdoms founded by different tests never land on each other's claimed chunk.
+     */
+    private static BlockPos isolatedHall(GameTestHelper helper) {
+        BlockPos origin = helper.absolutePos(BlockPos.ZERO);
+        int chunkX = 4096 + NEXT_HALL.getAndIncrement() * 2;
+        BlockPos pos = new BlockPos(chunkX * 16 + 4, origin.getY() + 2, 4096 * 16 + 4);
+        helper.getLevel().setBlockAndUpdate(pos, ModBlocks.TOWN_HALL.get().defaultBlockState());
+        return pos;
+    }
 
     @GameTest(template = EMPTY_STRUCTURE)
     public void townHallIsAJobSite(GameTestHelper helper) {
@@ -52,9 +69,7 @@ public class KingdomsGameTests implements FabricGameTest {
 
     @GameTest(template = EMPTY_STRUCTURE)
     public void foundingAKingdomAtATownHall(GameTestHelper helper) {
-        BlockPos local = new BlockPos(1, 2, 1);
-        helper.setBlock(local, ModBlocks.TOWN_HALL.get());
-        BlockPos hall = helper.absolutePos(local);
+        BlockPos hall = isolatedHall(helper);
         String name = "Testoria " + helper.getLevel().getGameTime();
 
         ServerPlayer founder = helper.makeMockServerPlayerInLevel();
@@ -75,9 +90,16 @@ public class KingdomsGameTests implements FabricGameTest {
         helper.assertTrue(Kingdoms.tryCreate(other, new CreateKingdomPayload(hall, name + " II", DyeColor.BLUE)).isEmpty(),
                 "a second kingdom was founded at a set-up town hall");
 
-        BlockPos local2 = new BlockPos(3, 2, 3);
-        helper.setBlock(local2, ModBlocks.TOWN_HALL.get());
-        BlockPos hall2 = helper.absolutePos(local2);
+        // Another Town Hall in the first kingdom's chunk: that land is taken.
+        BlockPos sameChunk = hall.offset(2, 0, 2);
+        helper.getLevel().setBlockAndUpdate(sameChunk, ModBlocks.TOWN_HALL.get().defaultBlockState());
+        other.moveTo(sameChunk.getX() + 1.5, sameChunk.getY(), sameChunk.getZ() + 0.5);
+        helper.assertTrue(Kingdoms.tryCreate(other, new CreateKingdomPayload(sameChunk, name + " II", DyeColor.BLUE)).isEmpty(),
+                "a kingdom was founded on another kingdom's land");
+
+        BlockPos hall2 = isolatedHall(helper);
+        other.moveTo(hall2.getX() + 1.5, hall2.getY(), hall2.getZ() + 0.5);
+        founder.moveTo(hall2.getX() + 1.5, hall2.getY(), hall2.getZ() + 0.5);
         helper.assertTrue(Kingdoms.tryCreate(other, new CreateKingdomPayload(hall2, name.toUpperCase(), DyeColor.BLUE)).isEmpty(),
                 "two kingdoms got the same name");
         helper.assertTrue(Kingdoms.tryCreate(founder, new CreateKingdomPayload(hall2, name + " II", DyeColor.BLUE)).isEmpty(),
@@ -89,9 +111,7 @@ public class KingdomsGameTests implements FabricGameTest {
 
     @GameTest(template = EMPTY_STRUCTURE)
     public void kingdomsWorkLikeTeams(GameTestHelper helper) {
-        BlockPos local = new BlockPos(1, 0, 1);
-        helper.setBlock(local, ModBlocks.TOWN_HALL.get());
-        BlockPos hall = helper.absolutePos(local);
+        BlockPos hall = isolatedHall(helper);
         String name = "Teamland " + helper.getLevel().getGameTime();
 
         ServerPlayer leader = helper.makeMockServerPlayerInLevel();
@@ -130,9 +150,7 @@ public class KingdomsGameTests implements FabricGameTest {
 
     @GameTest(template = EMPTY_STRUCTURE)
     public void kingdomRanksBansAndSettings(GameTestHelper helper) {
-        BlockPos local = new BlockPos(1, 0, 1);
-        helper.setBlock(local, ModBlocks.TOWN_HALL.get());
-        BlockPos hall = helper.absolutePos(local);
+        BlockPos hall = isolatedHall(helper);
         String name = "Rankshire " + helper.getLevel().getGameTime();
         ServerPlayer leader = helper.makeMockServerPlayerInLevel();
         leader.moveTo(hall.getX() + 1.5, hall.getY(), hall.getZ() + 0.5);
@@ -174,10 +192,43 @@ public class KingdomsGameTests implements FabricGameTest {
     }
 
     @GameTest(template = EMPTY_STRUCTURE)
+    public void townHallClaimsItsChunk(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos hall = isolatedHall(helper);
+        ChunkClaim chunk = ChunkClaim.of(GlobalPos.of(level.dimension(), hall));
+        KingdomData data = KingdomData.get(level.getServer());
+        helper.assertTrue(data.claimedBy(chunk).isEmpty(), "chunk was claimed before founding");
+
+        ServerPlayer leader = helper.makeMockServerPlayerInLevel();
+        leader.moveTo(hall.getX() + 1.5, hall.getY(), hall.getZ() + 0.5);
+        Kingdom kingdom = Kingdoms.tryCreate(leader, new CreateKingdomPayload(hall, "Claimholm " + level.getGameTime(), DyeColor.ORANGE)).orElseThrow();
+        helper.assertTrue(kingdom.claims().equals(java.util.Set.of(chunk)), "founding should claim the hall's chunk, got " + kingdom.claims());
+        helper.assertTrue(data.claimedBy(chunk).map(owner -> owner == kingdom).orElse(false), "chunk isn't looked up as the kingdom's");
+        var view = KingdomScreens.view(leader, kingdom);
+        helper.assertTrue(view.claims().equals(java.util.List.of(chunk.chunkPos())) && view.claimCount() == 1,
+                "screen should get the claimed chunk, got " + view.claims());
+
+        // Breaking the Town Hall gives up its chunk.
+        level.removeBlock(hall, false);
+        helper.assertTrue(kingdom.townHall().isEmpty(), "town hall wasn't cleared");
+        helper.assertTrue(kingdom.claims().isEmpty() && data.claimedBy(chunk).isEmpty(), "breaking the town hall didn't free its chunk");
+
+        // A new Town Hall becomes the seat and claims its own chunk.
+        BlockPos newHall = isolatedHall(helper);
+        leader.moveTo(newHall.getX() + 1.5, newHall.getY(), newHall.getZ() + 0.5);
+        Kingdoms.onTownHallUsed(leader, newHall);
+        ChunkClaim newChunk = ChunkClaim.of(GlobalPos.of(level.dimension(), newHall));
+        helper.assertTrue(kingdom.townHall().isPresent() && kingdom.hasClaimed(newChunk), "new town hall didn't claim its chunk");
+
+        // Disbanding frees all of it.
+        Kingdoms.leave(leader);
+        helper.assertTrue(data.claimedBy(newChunk).isEmpty(), "disbanded kingdom still holds land");
+        helper.succeed();
+    }
+
+    @GameTest(template = EMPTY_STRUCTURE)
     public void kingdomMapGrowsWithEmptyMaps(GameTestHelper helper) {
-        BlockPos local = new BlockPos(1, 0, 1);
-        helper.setBlock(local, ModBlocks.TOWN_HALL.get());
-        BlockPos hall = helper.absolutePos(local);
+        BlockPos hall = isolatedHall(helper);
         ServerPlayer leader = helper.makeMockServerPlayerInLevel();
         leader.moveTo(hall.getX() + 1.5, hall.getY(), hall.getZ() + 0.5);
         leader.setGameMode(net.minecraft.world.level.GameType.SURVIVAL); // creative players keep their maps
