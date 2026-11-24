@@ -41,6 +41,22 @@ public final class KingdomData extends SavedData {
     /** No night noted yet. Night numbers can be negative (before the first nightfall), so -1 won't do. */
     static final long NO_NIGHT = Long.MIN_VALUE;
     private long lastNight = NO_NIGHT;
+    /** Work blocks (Scholar's Desk, Tavern, Watchtower) and the kingdom of the member who placed each. See {@link KingdomWorkstations}. */
+    private final Map<GlobalPos, UUID> workstations = new HashMap<>();
+    private static final Codec<Map<GlobalPos, UUID>> WORKSTATIONS_CODEC = Codec.unboundedMap(Codec.STRING,
+            net.minecraft.core.UUIDUtil.STRING_CODEC).xmap(KingdomData::decodeWorkstations, KingdomData::encodeWorkstations);
+
+    private static Map<GlobalPos, UUID> decodeWorkstations(Map<String, UUID> raw) {
+        Map<GlobalPos, UUID> out = new HashMap<>();
+        raw.forEach((key, owner) -> decodePos(key).ifPresent(pos -> out.put(pos, owner)));
+        return out;
+    }
+
+    private static Map<String, UUID> encodeWorkstations(Map<GlobalPos, UUID> map) {
+        Map<String, UUID> out = new HashMap<>();
+        map.forEach((pos, owner) -> out.put(encodePos(pos), owner));
+        return out;
+    }
 
     public static KingdomData get(MinecraftServer server) {
         return server.overworld().getDataStorage().computeIfAbsent(FACTORY, FILE_NAME);
@@ -96,6 +112,36 @@ public final class KingdomData extends SavedData {
         }
     }
 
+    /** The kingdom that owns the work block at {@code pos}, if a member placed it and the kingdom still exists. */
+    public Optional<Kingdom> workstationOwner(GlobalPos pos) {
+        return Optional.ofNullable(this.workstations.get(pos)).map(this.kingdoms::get);
+    }
+
+    void setWorkstationOwner(GlobalPos pos, @org.jetbrains.annotations.Nullable Kingdom kingdom) {
+        if (kingdom == null ? this.workstations.remove(pos) != null : !kingdom.id().equals(this.workstations.put(pos, kingdom.id()))) {
+            this.setDirty();
+        }
+    }
+
+    /** "dimension|x|y|z": map keys have to be strings. */
+    private static String encodePos(GlobalPos pos) {
+        return pos.dimension().location() + "|" + pos.pos().getX() + "|" + pos.pos().getY() + "|" + pos.pos().getZ();
+    }
+
+    private static Optional<GlobalPos> decodePos(String key) {
+        String[] parts = key.split("\\|");
+        net.minecraft.resources.ResourceLocation dimension = parts.length == 4 ? net.minecraft.resources.ResourceLocation.tryParse(parts[0]) : null;
+        if (dimension == null) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(GlobalPos.of(net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION, dimension),
+                    new net.minecraft.core.BlockPos(Integer.parseInt(parts[1]), Integer.parseInt(parts[2]), Integer.parseInt(parts[3]))));
+        } catch (NumberFormatException e) {
+            return Optional.empty();
+        }
+    }
+
     public boolean isNameTaken(String name) {
         return this.kingdoms.values().stream().anyMatch(kingdom -> kingdom.name().equalsIgnoreCase(name));
     }
@@ -147,6 +193,8 @@ public final class KingdomData extends SavedData {
             // Its land is free again.
             kingdom.mutableClaims().forEach(chunk -> this.claimOwners.remove(chunk, kingdom.id()));
             kingdom.mutableClaims().clear();
+            // Its work blocks belong to nobody now.
+            this.workstations.values().removeIf(kingdom.id()::equals);
             KingdomTeams.remove(server, kingdom);
             Diplomacy.onDisbanded(server, kingdom);
             // Its Town Hall is free again: put the book away and take the colours down.
@@ -354,6 +402,9 @@ public final class KingdomData extends SavedData {
                 .ifPresent(list -> tag.put("kingdoms", list));
         tag.putLong("last_day", this.lastDay);
         tag.putLong("last_night", this.lastNight);
+        WORKSTATIONS_CODEC.encodeStart(NbtOps.INSTANCE, this.workstations)
+                .resultOrPartial(error -> Constants.LOG.error("Couldn't save workstations: {}", error))
+                .ifPresent(map -> tag.put("workstations", map));
         return tag;
     }
 
@@ -379,6 +430,15 @@ public final class KingdomData extends SavedData {
         data.kingdoms.values().forEach(data::claimLand);
         data.lastDay = tag.contains("last_day") ? tag.getLong("last_day") : -1;
         data.lastNight = tag.contains("last_night") ? tag.getLong("last_night") : NO_NIGHT;
+        if (tag.contains("workstations")) {
+            WORKSTATIONS_CODEC.parse(NbtOps.INSTANCE, tag.get("workstations"))
+                    .resultOrPartial(error -> Constants.LOG.error("Couldn't load workstations: {}", error))
+                    .ifPresent(map -> map.forEach((pos, owner) -> {
+                        if (data.kingdoms.containsKey(owner)) {
+                            data.workstations.put(pos, owner);
+                        }
+                    }));
+        }
         return data;
     }
 }

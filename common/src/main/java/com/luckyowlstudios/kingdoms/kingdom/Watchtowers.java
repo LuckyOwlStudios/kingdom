@@ -197,7 +197,7 @@ public final class Watchtowers {
         Optional<GlobalPos> site = villager.getBrain().getMemory(MemoryModuleType.JOB_SITE);
         if (site.isEmpty() || !site.get().dimension().equals(world.dimension()) || !world.isLoaded(site.get().pos())
                 || !world.getBlockState(site.get().pos()).is(ModBlocks.WATCHTOWER.get())
-                || data.claimedBy(ChunkClaim.of(site.get())).filter(owner -> owner == kingdom).isEmpty()) {
+                || !KingdomWorkstations.belongsTo(world.getServer(), site.get(), kingdom)) {
             return Optional.empty();
         }
         return site;
@@ -215,7 +215,7 @@ public final class Watchtowers {
     /** A player right-clicked a Watchtower: say whose it is and whether a Lookout keeps watch from it. */
     public static void onTowerUsed(ServerPlayer player, BlockPos pos) {
         GlobalPos tower = GlobalPos.of(player.level().dimension(), pos);
-        Optional<Kingdom> owner = Kingdoms.claimedBy(player.server, tower);
+        Optional<Kingdom> owner = KingdomWorkstations.owner(player.server, tower);
         if (owner.isEmpty()) {
             player.displayClientMessage(Component.translatable("kingdoms.watchtower.unclaimed"), true);
         } else if (mannedTowers(player.server, owner.get()).contains(tower)) {
