@@ -7,6 +7,9 @@ import com.luckyowlstudios.kingdoms.kingdom.KingdomData;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomLevel;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomVillagers;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomMaps;
+import com.luckyowlstudios.kingdoms.kingdom.KingdomPerks;
+import com.luckyowlstudios.kingdoms.kingdom.SharedXp;
+import com.luckyowlstudios.kingdoms.kingdom.TaxCollector;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomRank;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomScreens;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomTeams;
@@ -355,6 +358,165 @@ public class KingdomsGameTests implements FabricGameTest {
             for (int dx = -1; dx <= 1; dx++) {
                 for (int dz = -1; dz <= 1; dz++) {
                     level.setChunkForced(center.x() + dx, center.z() + dz, false);
+                }
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(template = EMPTY_STRUCTURE)
+    public void perksUnlockAndUpgradeWithPoints(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos hall = isolatedHall(helper);
+        ServerPlayer leader = helper.makeMockServerPlayerInLevel();
+        leader.moveTo(hall.getX() + 1.5, hall.getY(), hall.getZ() + 0.5);
+        String name = "Perkford " + level.getGameTime();
+        Kingdom kingdom = Kingdoms.tryCreate(leader, new CreateKingdomPayload(hall, name, DyeColor.BLUE)).orElseThrow();
+        ServerPlayer member = helper.makeMockServerPlayerInLevel();
+        Kingdoms.invite(leader, member);
+        Kingdoms.join(member, name);
+
+        helper.assertTrue(KingdomPerks.availablePoints(kingdom) == KingdomPerks.POINTS_PER_LEVEL, "a new kingdom should have one level's points");
+        helper.assertFalse(KingdomPerks.upgrade(leader, KingdomPerks.SHARED_XP), "unlocked Shared XP below its level");
+        Kingdoms.setLevel(level.getServer(), kingdom, 3);
+        helper.assertFalse(KingdomPerks.upgrade(member, KingdomPerks.SHARED_XP), "a plain member spent perk points");
+        helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.SHARED_XP.id().toString()), "leader couldn't unlock Shared XP");
+        helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.SHARED_XP), "leader couldn't upgrade Shared XP to tier 2");
+        helper.assertTrue(kingdom.perkTier(KingdomPerks.SHARED_XP.id()) == 2, "Shared XP should be tier 2");
+        helper.assertFalse(KingdomPerks.upgrade(leader, KingdomPerks.SHARED_XP), "tier 3 bought below its level");
+        int points = KingdomPerks.availablePoints(kingdom);
+        helper.assertTrue(points == 3 * KingdomPerks.POINTS_PER_LEVEL - 2, "wrong points left: " + points);
+
+        // Lowering the level switches off the tiers above it, but keeps them.
+        Kingdoms.setLevel(level.getServer(), kingdom, 2);
+        helper.assertTrue(KingdomPerks.activeTier(kingdom, KingdomPerks.SHARED_XP) == 1, "tier 2 should stop working at level 2");
+        Kingdoms.setLevel(level.getServer(), kingdom, 3);
+        helper.assertTrue(KingdomPerks.activeTier(kingdom, KingdomPerks.SHARED_XP) == 2, "tier 2 should work again at level 3");
+
+        var view = KingdomScreens.view(leader, kingdom);
+        helper.assertTrue(view.growth().perkTier(KingdomPerks.SHARED_XP.id()) == 2 && view.growth().perkPoints() == points,
+                "screen got the wrong perks: " + view.growth());
+
+        // Saved and loaded with the kingdom.
+        var ops = level.registryAccess().createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE);
+        Kingdom loaded = Kingdom.CODEC.parse(ops, Kingdom.CODEC.encodeStart(ops, kingdom).getOrThrow()).getOrThrow();
+        helper.assertTrue(loaded.perkTier(KingdomPerks.SHARED_XP.id()) == 2, "perk tier wasn't saved");
+
+        Kingdoms.leave(member);
+        Kingdoms.leave(leader);
+        helper.succeed();
+    }
+
+    @GameTest(template = EMPTY_STRUCTURE)
+    public void sharedXpGivesOtherMembersAShare(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos hall = isolatedHall(helper);
+        ServerPlayer leader = helper.makeMockServerPlayerInLevel();
+        leader.moveTo(hall.getX() + 1.5, hall.getY(), hall.getZ() + 0.5);
+        String name = "Sharewick " + level.getGameTime();
+        Kingdom kingdom = Kingdoms.tryCreate(leader, new CreateKingdomPayload(hall, name, DyeColor.GREEN)).orElseThrow();
+        ServerPlayer a = helper.makeMockServerPlayerInLevel();
+        ServerPlayer b = helper.makeMockServerPlayerInLevel();
+        for (ServerPlayer player : java.util.List.of(a, b)) {
+            Kingdoms.invite(leader, player);
+            Kingdoms.join(player, name);
+        }
+
+        // Without the perk, nothing is shared.
+        leader.giveExperiencePoints(80);
+        helper.assertTrue(a.totalExperience == 0 && b.totalExperience == 0, "XP was shared without the perk");
+
+        Kingdoms.setLevel(level.getServer(), kingdom, 2);
+        helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.SHARED_XP), "couldn't unlock Shared XP");
+        // Tier 1, three members: each other member gets 1/8.
+        helper.assertTrue(Math.abs(SharedXp.share(80, 3, 1) - 10) < 1e-9, "wrong share: " + SharedXp.share(80, 3, 1));
+        helper.assertTrue(Math.abs(SharedXp.share(70, 2, 1) - 10) < 1e-9, "two members should share 1/7");
+        leader.giveExperiencePoints(80);
+        helper.assertTrue(a.totalExperience == 10 && b.totalExperience == 10,
+                "each member should get 10 XP, got " + a.totalExperience + " and " + b.totalExperience);
+        helper.assertTrue(leader.totalExperience == 160, "shared XP came back to the leader: " + leader.totalExperience);
+
+        // Fractions add up: 4 XP gives each other member half a point, so two gains make one point.
+        leader.giveExperiencePoints(4);
+        helper.assertTrue(a.totalExperience == 10, "half a point was paid out early");
+        leader.giveExperiencePoints(4);
+        helper.assertTrue(a.totalExperience == 11 && b.totalExperience == 11, "two half points didn't make one, got " + a.totalExperience);
+
+        // Losing XP (enchanting, say) isn't shared.
+        leader.giveExperiencePoints(-20);
+        helper.assertTrue(a.totalExperience == 11, "lost XP was shared");
+
+        for (ServerPlayer player : java.util.List.of(a, b, leader)) {
+            Kingdoms.leave(player);
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = EMPTY_STRUCTURE, timeoutTicks = 400)
+    public void taxCollectorFillsTheTreasury(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos hall = isolatedHall(helper);
+        ServerPlayer leader = helper.makeMockServerPlayerInLevel();
+        leader.moveTo(hall.getX() + 1.5, hall.getY(), hall.getZ() + 0.5);
+        leader.setGameMode(net.minecraft.world.level.GameType.SURVIVAL);
+        Kingdom kingdom = Kingdoms.tryCreate(leader, new CreateKingdomPayload(hall, "Taxbury " + level.getGameTime(), DyeColor.ORANGE)).orElseThrow();
+        Kingdoms.setLevel(level.getServer(), kingdom, 3);
+        // Villagers only move in while the Town Hall is loaded, so keep it loaded like a nearby player would.
+        ChunkClaim center = ChunkClaim.of(GlobalPos.of(level.dimension(), hall));
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                level.setChunkForced(center.x() + dx, center.z() + dz, true);
+            }
+        }
+        helper.startSequence().thenWaitUntil(() -> {
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    helper.assertTrue(level.isPositionEntityTicking(new net.minecraft.world.level.ChunkPos(center.x() + dx, center.z() + dz).getMiddleBlockPosition(hall.getY())),
+                            "forced chunks aren't loaded yet");
+                }
+            }
+        }).thenExecute(() -> {
+            Villager jobless = KingdomVillagers.morning(level.getServer(), kingdom).orElseThrow(
+                    () -> new net.minecraft.gametest.framework.GameTestAssertException("no villager moved in"));
+            Villager farmer = KingdomVillagers.morning(level.getServer(), kingdom).orElseThrow(
+                    () -> new net.minecraft.gametest.framework.GameTestAssertException("no second villager moved in"));
+            try {
+                jobless.setVillagerData(jobless.getVillagerData().setProfession(net.minecraft.world.entity.npc.VillagerProfession.NONE));
+                farmer.setVillagerData(farmer.getVillagerData().setProfession(net.minecraft.world.entity.npc.VillagerProfession.FARMER).setLevel(3));
+
+                TaxCollector.morning(level.getServer(), kingdom);
+                helper.assertTrue(kingdom.taxes() == 0, "taxes without the perk");
+
+                helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.TAX_COLLECTOR), "couldn't unlock Tax Collector");
+                TaxCollector.morning(level.getServer(), kingdom);
+                helper.assertTrue(kingdom.taxes() == 2, "tier 1 should take 1 per villager, got " + kingdom.taxes());
+                helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.TAX_COLLECTOR), "couldn't upgrade Tax Collector");
+                TaxCollector.morning(level.getServer(), kingdom);
+                helper.assertTrue(kingdom.taxes() == 2 + 3, "tier 2: the farmer should pay 2, got " + (kingdom.taxes() - 2));
+                Kingdoms.setLevel(level.getServer(), kingdom, 4);
+                helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.TAX_COLLECTOR), "couldn't buy Tax Collector tier 3");
+                TaxCollector.morning(level.getServer(), kingdom);
+                helper.assertTrue(kingdom.taxes() == 5 + 4, "tier 3: the journeyman farmer should pay 3, got " + (kingdom.taxes() - 5));
+
+                // The treasury fills up.
+                int cap = TaxCollector.treasuryCap(level.getServer(), kingdom);
+                for (int day = 0; day < 100; day++) {
+                    TaxCollector.morning(level.getServer(), kingdom);
+                }
+                helper.assertTrue(kingdom.taxes() == cap, "treasury should stop at " + cap + ", has " + kingdom.taxes());
+                helper.assertTrue(KingdomScreens.view(leader, kingdom).growth().taxes() == cap, "screen got the wrong treasury");
+
+                helper.assertTrue(TaxCollector.collect(leader), "leader couldn't collect");
+                helper.assertTrue(kingdom.taxes() == 0, "treasury wasn't emptied");
+                int held = leader.getInventory().countItem(net.minecraft.world.item.Items.EMERALD);
+                helper.assertTrue(held == cap, "leader should hold " + cap + " emeralds, has " + held);
+                helper.assertFalse(TaxCollector.collect(leader), "collected from an empty treasury");
+            } finally {
+                Kingdoms.leave(leader);
+                java.util.List.of(jobless, farmer).forEach(net.minecraft.world.entity.Entity::discard);
+                for (int dx = -1; dx <= 1; dx++) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        level.setChunkForced(center.x() + dx, center.z() + dz, false);
+                    }
                 }
             }
         }).thenSucceed();

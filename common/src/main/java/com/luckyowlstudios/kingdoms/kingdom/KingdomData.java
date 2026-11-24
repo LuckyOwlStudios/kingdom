@@ -271,6 +271,16 @@ public final class KingdomData extends SavedData {
         this.setDirty();
     }
 
+    void setPerkTier(Kingdom kingdom, KingdomPerk perk, int tier) {
+        kingdom.setPerkTier(perk.id(), tier);
+        this.setDirty();
+    }
+
+    void setTaxes(Kingdom kingdom, int taxes) {
+        kingdom.setTaxes(taxes);
+        this.setDirty();
+    }
+
     void addResident(Kingdom kingdom, UUID villager) {
         kingdom.mutableResidents().add(villager);
         this.setDirty();

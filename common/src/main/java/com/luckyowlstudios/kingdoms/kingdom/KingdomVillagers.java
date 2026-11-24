@@ -50,6 +50,7 @@ public final class KingdomVillagers {
             return;
         }
         for (Kingdom kingdom : List.copyOf(data.all())) {
+            TaxCollector.morning(server, kingdom);
             morning(server, kingdom);
         }
     }

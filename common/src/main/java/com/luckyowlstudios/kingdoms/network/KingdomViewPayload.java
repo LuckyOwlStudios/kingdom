@@ -8,13 +8,16 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.saveddata.maps.MapId;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -50,16 +53,37 @@ public record KingdomViewPayload(BlockPos townHall, String name, DyeColor color,
      * @param villagerCap  how many the level allows
      * @param landCap      how many chunks the level allows
      * @param levelUpCost  emeralds needed for the next level, or 0 at the top level
+     * @param perkPoints   perk points the kingdom has left to spend
+     * @param perks        the tier the kingdom has of each perk it has unlocked
+     * @param taxes        emeralds waiting in the Town Hall's treasury
+     * @param taxCap       how many the treasury holds (0 without the Tax Collector perk)
      */
-    public record Growth(int level, int maxLevel, int villagers, int villagerCap, int landCap, int levelUpCost) {
-        static final StreamCodec<RegistryFriendlyByteBuf, Growth> STREAM_CODEC = StreamCodec.composite(
-                ByteBufCodecs.VAR_INT, Growth::level,
-                ByteBufCodecs.VAR_INT, Growth::maxLevel,
-                ByteBufCodecs.VAR_INT, Growth::villagers,
-                ByteBufCodecs.VAR_INT, Growth::villagerCap,
-                ByteBufCodecs.VAR_INT, Growth::landCap,
-                ByteBufCodecs.VAR_INT, Growth::levelUpCost,
-                Growth::new);
+    public record Growth(int level, int maxLevel, int villagers, int villagerCap, int landCap, int levelUpCost,
+                         int perkPoints, Map<ResourceLocation, Integer> perks, int taxes, int taxCap) {
+        private static final StreamCodec<io.netty.buffer.ByteBuf, Map<ResourceLocation, Integer>> PERKS_CODEC =
+                ByteBufCodecs.map(HashMap::new, ResourceLocation.STREAM_CODEC, ByteBufCodecs.VAR_INT);
+
+        /** The tier the kingdom has of a perk, or 0. */
+        public int perkTier(ResourceLocation perk) {
+            return this.perks.getOrDefault(perk, 0);
+        }
+
+        // More fields than StreamCodec.composite takes, so written out by hand.
+        static final StreamCodec<RegistryFriendlyByteBuf, Growth> STREAM_CODEC = StreamCodec.of(
+                (buf, growth) -> {
+                    buf.writeVarInt(growth.level);
+                    buf.writeVarInt(growth.maxLevel);
+                    buf.writeVarInt(growth.villagers);
+                    buf.writeVarInt(growth.villagerCap);
+                    buf.writeVarInt(growth.landCap);
+                    buf.writeVarInt(growth.levelUpCost);
+                    buf.writeVarInt(growth.perkPoints);
+                    PERKS_CODEC.encode(buf, growth.perks);
+                    buf.writeVarInt(growth.taxes);
+                    buf.writeVarInt(growth.taxCap);
+                },
+                buf -> new Growth(buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(),
+                        buf.readVarInt(), buf.readVarInt(), PERKS_CODEC.decode(buf), buf.readVarInt(), buf.readVarInt()));
 
         public boolean isMax() {
             return this.level >= this.maxLevel;

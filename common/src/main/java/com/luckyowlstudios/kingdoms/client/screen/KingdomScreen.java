@@ -1,6 +1,8 @@
 package com.luckyowlstudios.kingdoms.client.screen;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.luckyowlstudios.kingdoms.kingdom.KingdomPerk;
+import com.luckyowlstudios.kingdoms.kingdom.KingdomPerks;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomRank;
 import com.luckyowlstudios.kingdoms.network.CloseTownHallPayload;
 import com.luckyowlstudios.kingdoms.network.DiplomacyActionPayload;
@@ -23,6 +25,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.BannerItem;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
@@ -55,6 +58,7 @@ public class KingdomScreen extends Screen {
     private DiplomacyTab diplomacy;
     private CustomizeTab customize;
     private SettingsTab settings;
+    private PerksTab perks;
 
     public KingdomScreen(KingdomViewPayload view) {
         super(Component.literal(view.name()));
@@ -123,8 +127,9 @@ public class KingdomScreen extends Screen {
         this.diplomacy = new DiplomacyTab();
         this.customize = new CustomizeTab();
         this.settings = new SettingsTab();
+        this.perks = new PerksTab();
         this.tabBar = TabNavigationBar.builder(this.tabManager, this.width)
-                .addTabs(this.overview, this.members, this.diplomacy, this.customize, this.settings)
+                .addTabs(this.overview, this.members, this.perks, this.diplomacy, this.customize, this.settings)
                 .build();
         this.addRenderableWidget(this.tabBar);
         this.addRenderableWidget(Button.builder(CommonComponents.GUI_DONE, button -> this.onClose())
@@ -148,7 +153,7 @@ public class KingdomScreen extends Screen {
         super.tick();
         Tab current = this.tabManager.getCurrentTab();
         if (current != null) {
-            this.selectedTab = List.of(this.overview, this.members, this.diplomacy, this.customize, this.settings).indexOf(current);
+            this.selectedTab = List.of(this.overview, this.members, this.perks, this.diplomacy, this.customize, this.settings).indexOf(current);
         }
     }
 
@@ -792,6 +797,179 @@ public class KingdomScreen extends Screen {
                 public Component getNarration() {
                     return Component.translatable("narrator.select", Component.literal(this.kingdom.name()).append(", ").append(label(this.kingdom)));
                 }
+            }
+        }
+    }
+
+    /**
+     * The kingdom perk tree. The leader spends perk points (earned with each level) to unlock perks and upgrade them
+     * through their tiers; officers and the leader empty the tax treasury here too.
+     */
+    private final class PerksTab extends KingdomTab {
+
+        private static final int NODE_SIZE = 26;
+        private static final int COLUMN_GAP = 64;
+        private static final int ROW_GAP = 44;
+
+        private final List<PerkNode> nodes = new ArrayList<>();
+        private final Button collect;
+
+        PerksTab() {
+            super("kingdoms.kingdom.screen.perks");
+            for (KingdomPerk perk : KingdomPerks.all()) {
+                this.nodes.add(this.add(new PerkNode(perk)));
+            }
+            KingdomViewPayload.Growth growth = KingdomScreen.this.view.growth();
+            this.collect = this.add(Button.builder(Component.translatable("kingdoms.kingdom.screen.collect_taxes", growth.taxes()),
+                    button -> KingdomScreen.this.send(KingdomActionPayload.of(Action.COLLECT_TAXES))).size(120, 20).build());
+            this.collect.active = KingdomScreen.this.isOfficer() && growth.taxes() > 0;
+            this.collect.visible = growth.taxCap() > 0 || growth.taxes() > 0;
+            if (!KingdomScreen.this.isOfficer()) {
+                this.collect.setTooltip(Tooltip.create(Component.translatable("kingdoms.kingdom.screen.collect_taxes.officer_only")));
+            }
+        }
+
+        @Override
+        protected void layout(int centerX, int top) {
+            int columns = this.nodes.stream().mapToInt(node -> node.perk.column()).max().orElse(0) + 1;
+            int treeLeft = centerX - ((columns - 1) * COLUMN_GAP + NODE_SIZE) / 2;
+            int treeTop = top + 36;
+            for (PerkNode node : this.nodes) {
+                node.setPosition(treeLeft + node.perk.column() * COLUMN_GAP, treeTop + node.perk.row() * ROW_GAP);
+            }
+            this.collect.setPosition(centerX + 160 - 120, top);
+        }
+
+        @Override
+        void renderExtras(GuiGraphics graphics, int mouseX, int mouseY) {
+            KingdomViewPayload.Growth growth = KingdomScreen.this.view.growth();
+            int left = this.centerX() - 160;
+            int top = this.top();
+            graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.perk_points",
+                    growth.perkPoints(), KingdomPerks.POINTS_PER_LEVEL), left, top, 0xFFD700);
+            if (this.collect.visible) {
+                graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.treasury",
+                        growth.taxes(), growth.taxCap()), left, top + 12, 0x55FF55);
+            }
+            if (!KingdomScreen.this.view.viewerRank().atLeast(KingdomPerks.UNLOCK_RANK)) {
+                graphics.drawCenteredString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.perks.leader_only"),
+                        this.centerX(), this.area.bottom() - 14, 0xFF8080);
+            }
+
+            // Lines from each perk's prerequisites, gold once the prerequisite is unlocked.
+            for (PerkNode node : this.nodes) {
+                for (ResourceLocation id : node.perk.prerequisites()) {
+                    this.nodes.stream().filter(other -> other.perk.id().equals(id)).findFirst().ifPresent(from -> {
+                        int color = growth.perkTier(id) > 0 ? 0xFFFFD700 : 0xFF606060;
+                        int x1 = from.getX() + NODE_SIZE;
+                        int y1 = from.getY() + NODE_SIZE / 2;
+                        int x2 = node.getX();
+                        int y2 = node.getY() + NODE_SIZE / 2;
+                        int mid = (x1 + x2) / 2;
+                        graphics.hLine(x1, mid, y1, color);
+                        graphics.vLine(mid, Math.min(y1, y2), Math.max(y1, y2), color);
+                        graphics.hLine(mid, x2, y2, color);
+                    });
+                }
+            }
+
+            for (PerkNode node : this.nodes) {
+                if (node.isHovered()) {
+                    List<net.minecraft.util.FormattedCharSequence> lines = new ArrayList<>();
+                    node.tooltip().forEach(line -> lines.addAll(KingdomScreen.this.font.split(line, 220)));
+                    graphics.renderTooltip(KingdomScreen.this.font, lines, mouseX, mouseY);
+                }
+            }
+        }
+
+        /** One perk in the tree: its icon, framed by how far along it is, and its tier underneath. */
+        private final class PerkNode extends net.minecraft.client.gui.components.AbstractButton {
+
+            private final KingdomPerk perk;
+
+            PerkNode(KingdomPerk perk) {
+                super(0, 0, NODE_SIZE, NODE_SIZE, perk.displayName());
+                this.perk = perk;
+                this.active = KingdomScreen.this.view.viewerRank().atLeast(KingdomPerks.UNLOCK_RANK)
+                        && this.blocker() == KingdomPerks.Blocker.NONE;
+            }
+
+            private int tier() {
+                return KingdomScreen.this.view.growth().perkTier(this.perk.id());
+            }
+
+            private KingdomPerks.Blocker blocker() {
+                KingdomViewPayload.Growth growth = KingdomScreen.this.view.growth();
+                return KingdomPerks.blocker(this.perk, growth.level(), growth.perkPoints(), growth::perkTier);
+            }
+
+            @Override
+            public void onPress() {
+                KingdomScreen.this.send(KingdomActionPayload.withText(Action.UNLOCK_PERK, this.perk.id().toString()));
+            }
+
+            @Override
+            protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+                int x = this.getX();
+                int y = this.getY();
+                int tier = this.tier();
+                int frame = tier >= this.perk.maxTier() ? 0xFFFFD700 : tier > 0 ? 0xFFC0A040
+                        : this.active ? 0xFF55FF55 : 0xFF404040;
+                graphics.fill(x, y, x + NODE_SIZE, y + NODE_SIZE, frame);
+                graphics.fill(x + 2, y + 2, x + NODE_SIZE - 2, y + NODE_SIZE - 2,
+                        this.isHoveredOrFocused() ? 0xFF9A9A9A : 0xFF6B6B6B);
+                graphics.renderItem(new ItemStack(this.perk.icon()), x + 5, y + 5);
+                if (tier == 0) {
+                    // Not unlocked yet: dim the icon.
+                    graphics.fill(x + 2, y + 2, x + NODE_SIZE - 2, y + NODE_SIZE - 2, 0x90000000);
+                }
+                // One pip per tier, filled for the ones bought.
+                int pipLeft = x + NODE_SIZE / 2 - (this.perk.maxTier() * 5 - 1) / 2;
+                for (int n = 1; n <= this.perk.maxTier(); n++) {
+                    int pipX = pipLeft + (n - 1) * 5;
+                    graphics.fill(pipX, y + NODE_SIZE + 2, pipX + 4, y + NODE_SIZE + 6, n <= tier ? 0xFFFFD700 : 0xFF404040);
+                }
+                graphics.drawCenteredString(KingdomScreen.this.font, this.perk.displayName(), x + NODE_SIZE / 2, y + NODE_SIZE + 8,
+                        tier > 0 ? 0xFFFFFF : 0xA0A0A0);
+            }
+
+            List<Component> tooltip() {
+                List<Component> lines = new ArrayList<>();
+                int tier = this.tier();
+                lines.add(this.perk.displayName().copy().withStyle(net.minecraft.ChatFormatting.GOLD));
+                lines.add(this.perk.description().copy().withStyle(net.minecraft.ChatFormatting.GRAY));
+                for (int n = 1; n <= this.perk.maxTier(); n++) {
+                    KingdomPerk.Tier info = this.perk.tier(n);
+                    net.minecraft.ChatFormatting color = n <= tier ? net.minecraft.ChatFormatting.GREEN
+                            : n == tier + 1 ? net.minecraft.ChatFormatting.WHITE : net.minecraft.ChatFormatting.DARK_GRAY;
+                    lines.add(Component.translatable("kingdoms.kingdom.screen.perk_tier", n, this.perk.tierDescription(n),
+                            info.requiredLevel(), info.cost()).withStyle(color));
+                }
+                if (!this.perk.prerequisites().isEmpty()) {
+                    Component names = net.minecraft.network.chat.ComponentUtils.formatList(this.perk.prerequisites().stream()
+                            .map(id -> KingdomPerks.byId(id).map(KingdomPerk::displayName).orElse(Component.literal(id.toString())))
+                            .toList(), Component.literal(", "));
+                    lines.add(Component.translatable("kingdoms.kingdom.screen.perk_requires", names).withStyle(net.minecraft.ChatFormatting.GRAY));
+                }
+                KingdomPerks.Blocker blocker = this.blocker();
+                Component status;
+                if (blocker == KingdomPerks.Blocker.NONE) {
+                    status = KingdomScreen.this.view.viewerRank().atLeast(KingdomPerks.UNLOCK_RANK)
+                            ? Component.translatable(tier == 0 ? "kingdoms.kingdom.screen.perk_unlock" : "kingdoms.kingdom.screen.perk_upgrade")
+                                    .withStyle(net.minecraft.ChatFormatting.GREEN)
+                            : Component.translatable("kingdoms.kingdom.screen.perks.leader_only").withStyle(net.minecraft.ChatFormatting.RED);
+                } else {
+                    KingdomPerk.Tier next = this.perk.tier(Math.min(tier + 1, this.perk.maxTier()));
+                    status = Component.translatable(blocker.translationKey() + ".short", next.requiredLevel(), next.cost())
+                            .withStyle(blocker == KingdomPerks.Blocker.MAXED ? net.minecraft.ChatFormatting.GOLD : net.minecraft.ChatFormatting.RED);
+                }
+                lines.add(status);
+                return lines;
+            }
+
+            @Override
+            protected void updateWidgetNarration(net.minecraft.client.gui.narration.NarrationElementOutput output) {
+                this.defaultButtonNarrationText(output);
             }
         }
     }
