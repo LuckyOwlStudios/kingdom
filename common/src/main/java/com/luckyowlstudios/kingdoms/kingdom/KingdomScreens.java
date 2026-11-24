@@ -17,7 +17,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Server side of the Town Hall screen: builds what it shows and carries out its buttons.
+ * Server side of the Town Hall screen: builds what it shows and carries out its buttons. Perks are researched at a
+ * Scholar's Desk instead ({@link KingdomResearch}).
  */
 public final class KingdomScreens {
 
@@ -112,7 +113,6 @@ public final class KingdomScreens {
                     new Kingdom.Settings(action.value() != 0, kingdom.settings().friendlyFire()));
             case SET_FRIENDLY_FIRE -> Kingdoms.setSettings(player,
                     new Kingdom.Settings(kingdom.settings().inviteOnly(), action.value() != 0));
-            case UNLOCK_PERK -> KingdomPerks.upgrade(player, action.text());
             case COLLECT_TAXES -> TaxCollector.collect(player);
             case OPEN_VAULT -> {
                 // The vault's menu replaces the Town Hall screen, so there's nothing to refresh.

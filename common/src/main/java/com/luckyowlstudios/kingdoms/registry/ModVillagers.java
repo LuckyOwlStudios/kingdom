@@ -13,17 +13,21 @@ import net.minecraft.world.entity.npc.VillagerProfession;
 import java.util.function.Supplier;
 
 /**
- * The Town Hall as a villager job site, and the Advisor, the profession that works at it.
+ * The kingdom's work blocks as villager job sites, and the professions that work at them: the Town Hall and its
+ * Advisor, and the Scholar's Desk and its Scholar.
  * <p>
- * The Town Hall is a point of interest with one ticket, so one villager can claim each Town Hall, and an
- * unemployed villager that claims it becomes the Advisor.
+ * Each is a point of interest with one ticket, so one villager can claim each block, and an unemployed villager that
+ * claims one takes its job.
  */
 public final class ModVillagers {
 
     public static final String TOWN_HALL = "town_hall";
     public static final String ADVISOR = "advisor";
+    public static final String SCHOLARS_DESK = "scholars_desk";
+    public static final String SCHOLAR = "scholar";
 
     public static final ResourceKey<PoiType> TOWN_HALL_POI = ResourceKey.create(Registries.POINT_OF_INTEREST_TYPE, Constants.id(TOWN_HALL));
+    public static final ResourceKey<PoiType> SCHOLARS_DESK_POI = ResourceKey.create(Registries.POINT_OF_INTEREST_TYPE, Constants.id(SCHOLARS_DESK));
 
     /** Like vanilla job sites: one villager per block, and it has to stand next to it. */
     public static final int TOWN_HALL_TICKETS = 1;
@@ -37,6 +41,16 @@ public final class ModVillagers {
                     poi -> poi.is(TOWN_HALL_POI),
                     ImmutableSet.of(), ImmutableSet.of(),
                     SoundEvents.VILLAGER_WORK_CARTOGRAPHER));
+
+    public static final Supplier<PoiType> SCHOLARS_DESK_POI_TYPE = Services.REGISTRY.poiType(SCHOLARS_DESK, TOWN_HALL_TICKETS, TOWN_HALL_RANGE, ModBlocks.SCHOLARS_DESK);
+
+    /** Works at a Scholar's Desk. Scholars living in a kingdom research its perks (see KingdomResearch). */
+    public static final Supplier<VillagerProfession> SCHOLAR_PROFESSION = Services.REGISTRY.register(BuiltInRegistries.VILLAGER_PROFESSION, SCHOLAR,
+            () -> new VillagerProfession(SCHOLAR,
+                    poi -> poi.is(SCHOLARS_DESK_POI),
+                    poi -> poi.is(SCHOLARS_DESK_POI),
+                    ImmutableSet.of(), ImmutableSet.of(),
+                    SoundEvents.VILLAGER_WORK_LIBRARIAN));
 
     private ModVillagers() {
     }

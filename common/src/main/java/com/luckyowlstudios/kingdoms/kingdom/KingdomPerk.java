@@ -11,7 +11,7 @@ import java.util.List;
  * code it changes (Shared XP in {@link SharedXp}, for example), which asks {@link KingdomPerks#activeTier} first.
  * <p>
  * A perk has one or more tiers. Unlocking it gives tier 1; each upgrade after that is the next tier, with its own
- * level requirement and cost.
+ * level requirement, cost and research time. Tiers are researched at a Scholar's Desk (see {@link KingdomResearch}).
  * <p>
  * Text comes from the language file: {@code kingdoms.perk.<path>} (name), {@code kingdoms.perk.<path>.description}
  * (what the perk is about) and {@code kingdoms.perk.<path>.tier.<n>} (what tier {@code n} gives).
@@ -27,10 +27,11 @@ public record KingdomPerk(ResourceLocation id, Item icon, List<Tier> tiers, List
                           int column, int row) {
 
     /**
-     * @param requiredLevel the kingdom level needed to buy this tier (and to keep it working)
-     * @param cost          perk points it takes
+     * @param requiredLevel   the kingdom level needed to research this tier (and to keep it working)
+     * @param cost            perk points it takes
+     * @param researchSeconds how long one Scholar takes to research it, in seconds; more Scholars share the work
      */
-    public record Tier(int requiredLevel, int cost) {
+    public record Tier(int requiredLevel, int cost, int researchSeconds) {
     }
 
     public int maxTier() {

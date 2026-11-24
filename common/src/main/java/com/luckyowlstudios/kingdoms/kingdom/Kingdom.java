@@ -46,7 +46,7 @@ public final class Kingdom {
             Settings.CODEC.optionalFieldOf("settings", Settings.DEFAULT).forGetter(Kingdom::settings),
             KingdomMap.MAP_CODEC.forGetter(Kingdom::map),
             ChunkClaim.CODEC.listOf().optionalFieldOf("claims", List.of()).forGetter(kingdom -> List.copyOf(kingdom.claims)),
-            Growth.MAP_CODEC.forGetter(kingdom -> new Growth(kingdom.level, List.copyOf(kingdom.residents), Map.copyOf(kingdom.perks), kingdom.taxes, kingdom.xp, kingdom.vault.getItems()))
+            Growth.MAP_CODEC.forGetter(kingdom -> new Growth(kingdom.level, List.copyOf(kingdom.residents), Map.copyOf(kingdom.perks), kingdom.taxes, kingdom.xp, kingdom.vault.getItems(), Optional.ofNullable(kingdom.research)))
     ).apply(instance, (id, name, color, founder, leader, members, invites, townHall, banner, officers, banned, settings, map, claims, growth) -> {
         Kingdom kingdom = new Kingdom(id, name, color, founder, leader.orElse(founder), new LinkedHashSet<>(members), townHall.orElse(null));
         kingdom.invites.addAll(invites);
@@ -66,22 +66,25 @@ public final class Kingdom {
         for (int slot = 0; slot < Math.min(growth.vault().size(), kingdom.vault.getContainerSize()); slot++) {
             kingdom.vault.setItem(slot, growth.vault().get(slot));
         }
+        kingdom.research = growth.research().orElse(null);
         return kingdom;
     }));
 
     /**
      * Level, villagers, perk tiers, the tax treasury and the shared vault, saved as top-level fields ({@code level},
-     * {@code residents}, {@code perks}, {@code taxes}, {@code vault}) but grouped so the kingdom codec stays under the
+     * {@code residents}, {@code perks}, {@code taxes}, {@code vault}, {@code research}) but grouped so the kingdom codec stays under the
      * 16-field limit. Add new saved fields here too.
      */
-    private record Growth(int level, List<UUID> residents, Map<ResourceLocation, Integer> perks, int taxes, int xp, List<ItemStack> vault) {
+    private record Growth(int level, List<UUID> residents, Map<ResourceLocation, Integer> perks, int taxes, int xp, List<ItemStack> vault,
+                          Optional<KingdomResearch.Research> research) {
         static final com.mojang.serialization.MapCodec<Growth> MAP_CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
                 Codec.INT.optionalFieldOf("level", 1).forGetter(Growth::level),
                 UUIDUtil.CODEC.listOf().optionalFieldOf("residents", List.of()).forGetter(Growth::residents),
                 Codec.unboundedMap(ResourceLocation.CODEC, Codec.INT).optionalFieldOf("perks", Map.of()).forGetter(Growth::perks),
                 Codec.INT.optionalFieldOf("taxes", 0).forGetter(Growth::taxes),
                 Codec.INT.optionalFieldOf("xp", 0).forGetter(Growth::xp),
-                ItemStack.OPTIONAL_CODEC.listOf().optionalFieldOf("vault", List.of()).forGetter(Growth::vault)
+                ItemStack.OPTIONAL_CODEC.listOf().optionalFieldOf("vault", List.of()).forGetter(Growth::vault),
+                KingdomResearch.Research.CODEC.optionalFieldOf("research").forGetter(Growth::research)
         ).apply(instance, Growth::new));
     }
 
@@ -121,6 +124,8 @@ public final class Kingdom {
     private int taxes;
     private int xp;
     private final net.minecraft.world.SimpleContainer vault = new net.minecraft.world.SimpleContainer(SharedVault.SIZE);
+    @org.jetbrains.annotations.Nullable
+    private KingdomResearch.Research research;
 
     Kingdom(UUID id, String name, DyeColor color, UUID founder, UUID leader, Set<UUID> members, GlobalPos townHall) {
         this.id = id;
@@ -247,6 +252,11 @@ public final class Kingdom {
         return this.vault;
     }
 
+    /** The perk tier the kingdom's Scholars are researching, if any. Its points are already spent. */
+    public Optional<KingdomResearch.Research> research() {
+        return Optional.ofNullable(this.research);
+    }
+
     /** Kingdom XP earned toward the next level. Starts again from 0 at each level, and stays 0 at the top level. */
     public int xp() {
         return this.xp;
@@ -331,6 +341,10 @@ public final class Kingdom {
 
     void setPerkTier(ResourceLocation perk, int tier) {
         this.perks.put(perk, tier);
+    }
+
+    void setResearch(@org.jetbrains.annotations.Nullable KingdomResearch.Research research) {
+        this.research = research;
     }
 
     void setXp(int xp) {

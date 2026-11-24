@@ -26,6 +26,10 @@ public final class KingdomsClient {
                 net.minecraft.client.Minecraft.getInstance().getToasts().addToast(new PerkToast(perk, payload.tier())));
     }
 
+    public static void handle(com.luckyowlstudios.kingdoms.network.ResearchViewPayload payload) {
+        com.luckyowlstudios.kingdoms.client.screen.ResearchScreen.show(payload);
+    }
+
     public static void handle(DiplomacyViewPayload payload) {
         KingdomScreen.showDiplomacy(payload);
     }
