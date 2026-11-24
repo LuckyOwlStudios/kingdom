@@ -204,7 +204,7 @@ public final class KingdomData extends SavedData {
         KingdomTeams.sync(server, kingdom);
     }
 
-    void setMap(Kingdom kingdom, net.minecraft.world.level.saveddata.maps.MapId map) {
+    void setMap(Kingdom kingdom, KingdomMap map) {
         kingdom.setMap(map);
         this.setDirty();
     }
@@ -268,7 +268,27 @@ public final class KingdomData extends SavedData {
     /** Sets the kingdom's level and grows (or shrinks) its land to match. */
     void setLevel(Kingdom kingdom, int level) {
         kingdom.setLevel(level);
+        kingdom.setXp(0);
         this.claimLand(kingdom);
+        this.setDirty();
+    }
+
+    /**
+     * Adds kingdom XP, levelling up as many times as it pays for. What's left over counts toward the next level;
+     * nothing is kept at the top level.
+     */
+    void addXp(Kingdom kingdom, int amount) {
+        int xp = kingdom.xp() + amount;
+        int level = kingdom.level();
+        while (level < KingdomLevel.MAX_LEVEL && xp >= KingdomLevel.of(level + 1).xp()) {
+            xp -= KingdomLevel.of(level + 1).xp();
+            level++;
+        }
+        if (level != kingdom.level()) {
+            kingdom.setLevel(level);
+            this.claimLand(kingdom);
+        }
+        kingdom.setXp(level >= KingdomLevel.MAX_LEVEL ? 0 : xp);
         this.setDirty();
     }
 

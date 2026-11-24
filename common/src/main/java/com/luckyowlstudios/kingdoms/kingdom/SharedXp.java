@@ -30,6 +30,11 @@ public final class SharedXp {
     private SharedXp() {
     }
 
+    /** True while Shared XP is paying out shares. That XP was already counted for the kingdom, so it isn't again. */
+    public static boolean isSharing() {
+        return sharing;
+    }
+
     /** The share of a gain that each other member gets, in a kingdom of this many members, at this perk tier. */
     public static double share(int amount, int members, int tier) {
         if (members < 2 || tier < 1) {

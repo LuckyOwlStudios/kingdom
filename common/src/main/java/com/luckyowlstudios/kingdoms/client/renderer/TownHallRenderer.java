@@ -1,6 +1,5 @@
 package com.luckyowlstudios.kingdoms.client.renderer;
 
-import com.luckyowlstudios.kingdoms.Constants;
 import com.luckyowlstudios.kingdoms.block.TownHallBlock;
 import com.luckyowlstudios.kingdoms.block.entity.TownHallBlockEntity;
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -12,12 +11,11 @@ import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
 import net.minecraft.core.Direction;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.block.state.BlockState;
 
 /**
- * Draws a brown book ({@link TownHallBookModel}) lying on top of a Town Hall that belongs to a kingdom. It lies closed with its
+ * Draws a brown book ({@link TownHallBookModel}, {@link TownHallBookTexture}) lying on top of a Town Hall that belongs to a kingdom. It lies closed with its
  * spine on the reader's left, and the cover swings open while someone has the Town Hall screen open.
  */
 public class TownHallRenderer implements BlockEntityRenderer<TownHallBlockEntity> {
@@ -28,7 +26,6 @@ public class TownHallRenderer implements BlockEntityRenderer<TownHallBlockEntity
      * back cover stays put and the front cover swings a full 180 degrees over the spine.
      */
     private static final float MAX_SPREAD = Mth.HALF_PI;
-    private static final ResourceLocation TEXTURE = Constants.id("textures/entity/town_hall_book.png");
     /** Where the book's centre sits, from the middle of the top: towards the front, clear of the inkwell at the back. */
     private static final float FORWARD = 2.0F * PIXEL;
     /** The closed book is 6 pixels wide; this moves it so it's centred whether open or closed. */
@@ -37,6 +34,8 @@ public class TownHallRenderer implements BlockEntityRenderer<TownHallBlockEntity
     private final TownHallBookModel bookModel = new TownHallBookModel();
 
     public TownHallRenderer(BlockEntityRendererProvider.Context context) {
+        // Renderers are made on every resource reload, so this also picks up resource pack changes.
+        TownHallBookTexture.register();
     }
 
     @Override
@@ -63,7 +62,7 @@ public class TownHallRenderer implements BlockEntityRenderer<TownHallBlockEntity
         // ...then roll it about the spine so the back cover stays flat on the table while the front cover lifts.
         poseStack.mulPose(Axis.YP.rotation(Mth.HALF_PI - spread));
         this.bookModel.setupAnim(spread);
-        VertexConsumer consumer = buffer.getBuffer(RenderType.entitySolid(TEXTURE));
+        VertexConsumer consumer = buffer.getBuffer(RenderType.entitySolid(TownHallBookTexture.LOCATION));
         // The hall itself is solid, so light the book from the block above it.
         int light = hall.getLevel() != null ? LevelRenderer.getLightColor(hall.getLevel(), hall.getBlockPos().above()) : packedLight;
         this.bookModel.render(poseStack, consumer, light, packedOverlay);

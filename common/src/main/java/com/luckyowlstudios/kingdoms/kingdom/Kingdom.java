@@ -9,7 +9,6 @@ import net.minecraft.network.chat.TextColor;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.saveddata.maps.MapId;
 
 import java.util.Collections;
 import java.util.HashSet;
@@ -45,9 +44,9 @@ public final class Kingdom {
             UUIDUtil.CODEC.listOf().optionalFieldOf("officers", List.of()).forGetter(kingdom -> List.copyOf(kingdom.officers)),
             UUIDUtil.CODEC.listOf().optionalFieldOf("banned", List.of()).forGetter(kingdom -> List.copyOf(kingdom.banned)),
             Settings.CODEC.optionalFieldOf("settings", Settings.DEFAULT).forGetter(Kingdom::settings),
-            MapId.CODEC.optionalFieldOf("map").forGetter(Kingdom::map),
+            KingdomMap.MAP_CODEC.forGetter(Kingdom::map),
             ChunkClaim.CODEC.listOf().optionalFieldOf("claims", List.of()).forGetter(kingdom -> List.copyOf(kingdom.claims)),
-            Growth.MAP_CODEC.forGetter(kingdom -> new Growth(kingdom.level, List.copyOf(kingdom.residents), Map.copyOf(kingdom.perks), kingdom.taxes, kingdom.vault.getItems()))
+            Growth.MAP_CODEC.forGetter(kingdom -> new Growth(kingdom.level, List.copyOf(kingdom.residents), Map.copyOf(kingdom.perks), kingdom.taxes, kingdom.xp, kingdom.vault.getItems()))
     ).apply(instance, (id, name, color, founder, leader, members, invites, townHall, banner, officers, banned, settings, map, claims, growth) -> {
         Kingdom kingdom = new Kingdom(id, name, color, founder, leader.orElse(founder), new LinkedHashSet<>(members), townHall.orElse(null));
         kingdom.invites.addAll(invites);
@@ -55,7 +54,7 @@ public final class Kingdom {
         kingdom.officers.addAll(officers);
         kingdom.banned.addAll(banned);
         kingdom.settings = settings;
-        kingdom.map = map.orElse(null);
+        kingdom.map = map;
         kingdom.claims.addAll(claims);
         kingdom.level = Math.clamp(growth.level(), 1, KingdomLevel.MAX_LEVEL);
         kingdom.residents.addAll(growth.residents());
@@ -63,6 +62,7 @@ public final class Kingdom {
             if (tier > 0) kingdom.perks.put(perk, tier);
         });
         kingdom.taxes = Math.max(0, growth.taxes());
+        kingdom.xp = Math.max(0, growth.xp());
         for (int slot = 0; slot < Math.min(growth.vault().size(), kingdom.vault.getContainerSize()); slot++) {
             kingdom.vault.setItem(slot, growth.vault().get(slot));
         }
@@ -74,12 +74,13 @@ public final class Kingdom {
      * {@code residents}, {@code perks}, {@code taxes}, {@code vault}) but grouped so the kingdom codec stays under the
      * 16-field limit. Add new saved fields here too.
      */
-    private record Growth(int level, List<UUID> residents, Map<ResourceLocation, Integer> perks, int taxes, List<ItemStack> vault) {
+    private record Growth(int level, List<UUID> residents, Map<ResourceLocation, Integer> perks, int taxes, int xp, List<ItemStack> vault) {
         static final com.mojang.serialization.MapCodec<Growth> MAP_CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
                 Codec.INT.optionalFieldOf("level", 1).forGetter(Growth::level),
                 UUIDUtil.CODEC.listOf().optionalFieldOf("residents", List.of()).forGetter(Growth::residents),
                 Codec.unboundedMap(ResourceLocation.CODEC, Codec.INT).optionalFieldOf("perks", Map.of()).forGetter(Growth::perks),
                 Codec.INT.optionalFieldOf("taxes", 0).forGetter(Growth::taxes),
+                Codec.INT.optionalFieldOf("xp", 0).forGetter(Growth::xp),
                 ItemStack.OPTIONAL_CODEC.listOf().optionalFieldOf("vault", List.of()).forGetter(Growth::vault)
         ).apply(instance, Growth::new));
     }
@@ -112,12 +113,13 @@ public final class Kingdom {
     private final Set<UUID> officers = new HashSet<>();
     private final Set<UUID> banned = new HashSet<>();
     private Settings settings = Settings.DEFAULT;
-    private MapId map;
+    private KingdomMap map = KingdomMap.EMPTY;
     private final Set<ChunkClaim> claims = new LinkedHashSet<>();
     private int level = 1;
     private final Set<UUID> residents = new LinkedHashSet<>();
     private final Map<ResourceLocation, Integer> perks = new LinkedHashMap<>();
     private int taxes;
+    private int xp;
     private final net.minecraft.world.SimpleContainer vault = new net.minecraft.world.SimpleContainer(SharedVault.SIZE);
 
     Kingdom(UUID id, String name, DyeColor color, UUID founder, UUID leader, Set<UUID> members, GlobalPos townHall) {
@@ -186,9 +188,9 @@ public final class Kingdom {
         return this.settings;
     }
 
-    /** The kingdom's map, centred on its Town Hall. Grows when given empty maps. */
-    public Optional<MapId> map() {
-        return Optional.ofNullable(this.map);
+    /** The kingdom's map, a grid of maps around its Town Hall. Grows when given empty maps. */
+    public KingdomMap map() {
+        return this.map;
     }
 
     /** Every chunk the kingdom has claimed, in the order it claimed them. */
@@ -243,6 +245,11 @@ public final class Kingdom {
     /** The Shared Vault's contents. Its menu only shows as many rows as the perk's tier allows. */
     public net.minecraft.world.SimpleContainer vault() {
         return this.vault;
+    }
+
+    /** Kingdom XP earned toward the next level. Starts again from 0 at each level, and stays 0 at the top level. */
+    public int xp() {
+        return this.xp;
     }
 
     /** Emeralds waiting in the Town Hall's treasury, from the Tax Collector perk. */
@@ -306,7 +313,7 @@ public final class Kingdom {
         this.settings = settings;
     }
 
-    void setMap(MapId map) {
+    void setMap(KingdomMap map) {
         this.map = map;
     }
 
@@ -324,6 +331,10 @@ public final class Kingdom {
 
     void setPerkTier(ResourceLocation perk, int tier) {
         this.perks.put(perk, tier);
+    }
+
+    void setXp(int xp) {
+        this.xp = Math.max(0, xp);
     }
 
     void setTaxes(int taxes) {

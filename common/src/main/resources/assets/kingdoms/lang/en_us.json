@@ -103,14 +103,8 @@
   "kingdoms.kingdom.screen.invite_only.tooltip": "When off, anyone who isn't banned can join from the Town Hall or with /kingdom join",
   "kingdoms.kingdom.screen.friendly_fire": "Friendly Fire",
   "kingdoms.kingdom.screen.friendly_fire.tooltip": "Whether members can hurt each other",
-  "kingdoms.kingdom.screen.level": "Level %s / %s",
   "kingdoms.kingdom.screen.villagers": "Villagers: %s / %s",
   "kingdoms.kingdom.screen.land": "Land: %s / %s chunks",
-  "kingdoms.kingdom.screen.level_up": "Level Up",
-  "kingdoms.kingdom.screen.level_up.cost": "Costs %s Emeralds to reach level %s",
-  "kingdoms.kingdom.screen.level_up.max": "Your kingdom is at the highest level",
-  "kingdoms.kingdom.level.max": "%s is already at the highest level",
-  "kingdoms.kingdom.level.cannot_afford": "You need %s %s to reach level %s",
   "kingdoms.kingdom.level.reached": "%s is now level %s! Up to %s villagers can live here, on up to %s chunks of land",
   "kingdoms.kingdom.level.set": "Set %s to level %s",
   "kingdoms.kingdom.villager_arrived": "A villager has moved into %s! (%s / %s villagers)",
@@ -277,5 +271,9 @@
   "kingdoms.perk.swift_roads.description": "Members are faster on dirt paths in your kingdom's land.",
   "kingdoms.perk.swift_roads.tier.1": "Speed on paths",
   "kingdoms.perk.swift_roads.tier.2": "Speed II on paths",
-  "kingdoms.perk.swift_roads.tier.3": "Also Speed anywhere on your land"
+  "kingdoms.perk.swift_roads.tier.3": "Also Speed anywhere on your land",
+  "kingdoms.kingdom.screen.level_bar": "Level %s   %s / %s XP",
+  "kingdoms.kingdom.screen.level_bar.max": "Level %s (highest level)",
+  "kingdoms.kingdom.screen.level_bar.tooltip": "Whenever a member gains experience, the kingdom gains the same amount. Each level takes more XP than the last.",
+  "kingdoms.kingdom.xp.added": "Gave %s XP to %s"
 }

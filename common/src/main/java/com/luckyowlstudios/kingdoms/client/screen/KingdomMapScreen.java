@@ -27,8 +27,8 @@ public class KingdomMapScreen extends Screen {
     /** Screen pixels per map pixel. */
     private float zoom = -1.0F;
     /** The map pixel in the middle of the view. */
-    private float panX = KingdomMapRenderer.MAP_SIZE / 2.0F;
-    private float panY = KingdomMapRenderer.MAP_SIZE / 2.0F;
+    private float panX = Float.NaN;
+    private float panY = Float.NaN;
     private boolean dragging;
     private KingdomMapRenderer.Icon selected;
 
@@ -40,6 +40,10 @@ public class KingdomMapScreen extends Screen {
 
     /** New data from the server: keep the view where it is, and the selection if it's still there. */
     void update(KingdomViewPayload view) {
+        // The grid grows on every side, so keep looking at the same land.
+        float shift = (view.mapRadius() - this.view.mapRadius()) * KingdomMapRenderer.MAP_SIZE;
+        this.panX += shift;
+        this.panY += shift;
         this.view = view;
         if (this.selected != null) {
             this.selected = KingdomMapRenderer.icons(view).stream()
@@ -54,13 +58,12 @@ public class KingdomMapScreen extends Screen {
     @Override
     protected void init() {
         if (this.zoom < 0) {
-            this.zoom = this.fitZoom();
+            this.resetView();
         }
         this.zoom = Mth.clamp(this.zoom, this.minZoom(), MAX_ZOOM);
         int y = this.height - 28;
         this.addRenderableWidget(Button.builder(Component.translatable("kingdoms.kingdom.map.reset"), button -> {
-            this.zoom = this.fitZoom();
-            this.panX = this.panY = KingdomMapRenderer.MAP_SIZE / 2.0F;
+            this.resetView();
         }).bounds(this.width / 2 - 154, y, 150, 20).build());
         this.addRenderableWidget(Button.builder(CommonComponents.GUI_DONE, button -> this.onClose())
                 .bounds(this.width / 2 + 4, y, 150, 20).build());
@@ -88,14 +91,28 @@ public class KingdomMapScreen extends Screen {
         return x >= this.viewLeft() && x < this.viewRight() && y >= this.viewTop() && y < this.viewBottom();
     }
 
-    /** The zoom that fits the whole map in the view. */
+    /**
+     * The starting zoom, which fits one map (the land right around the Town Hall) in the view. It doesn't depend on
+     * how big the kingdom map has grown: a bigger map just has more to pan around to.
+     */
     private float fitZoom() {
-        float size = Math.min(this.viewRight() - this.viewLeft(), this.viewBottom() - this.viewTop()) - 16;
-        return Math.max(0.5F, size / KingdomMapRenderer.MAP_SIZE);
+        return this.fit(KingdomMapRenderer.MAP_SIZE);
     }
 
+    private float fit(int mapPixels) {
+        float size = Math.min(this.viewRight() - this.viewLeft(), this.viewBottom() - this.viewTop()) - 16;
+        return Math.max(0.25F, size / mapPixels);
+    }
+
+    /** Zooming out stops once the whole grid fits. */
     private float minZoom() {
-        return Math.min(1.0F, this.fitZoom());
+        return Math.min(this.fitZoom(), Math.max(this.fit(KingdomMapRenderer.gridSize(this.view)), 0.25F));
+    }
+
+    /** Back to the Town Hall, at the starting zoom. */
+    private void resetView() {
+        this.zoom = this.fitZoom();
+        this.panX = this.panY = KingdomMapRenderer.gridSize(this.view) / 2.0F;
     }
 
     /** Screen position of the map's top-left corner. */
@@ -130,8 +147,9 @@ public class KingdomMapScreen extends Screen {
     }
 
     private void clampPan() {
-        this.panX = Mth.clamp(this.panX, 0, KingdomMapRenderer.MAP_SIZE);
-        this.panY = Mth.clamp(this.panY, 0, KingdomMapRenderer.MAP_SIZE);
+        int size = KingdomMapRenderer.gridSize(this.view);
+        this.panX = Mth.clamp(this.panX, 0, size);
+        this.panY = Mth.clamp(this.panY, 0, size);
     }
 
     // ---- Input ----
@@ -200,9 +218,10 @@ public class KingdomMapScreen extends Screen {
         graphics.enableScissor(left, top, right, bottom);
         float mapLeft = this.mapLeft();
         float mapTop = this.mapTop();
+        KingdomMapRenderer.drawPaper(graphics, mapLeft, mapTop, KingdomMapRenderer.gridSize(this.view), this.zoom);
         KingdomMapRenderer.drawMap(graphics, this.view, mapLeft, mapTop, this.zoom);
         Optional<KingdomMapRenderer.Icon> hovered = this.dragging ? Optional.empty() : this.iconAt(mouseX, mouseY);
-        if (KingdomMapRenderer.mapData(this.view).isPresent()) {
+        if (KingdomMapRenderer.hasMapData(this.view)) {
             for (KingdomMapRenderer.Icon icon : KingdomMapRenderer.icons(this.view)) {
                 KingdomMapRenderer.drawIcon(graphics, icon, Math.round(mapLeft + icon.mapX() * this.zoom),
                         Math.round(mapTop + icon.mapY() * this.zoom), this.iconSize(), icon.equals(this.selected));
