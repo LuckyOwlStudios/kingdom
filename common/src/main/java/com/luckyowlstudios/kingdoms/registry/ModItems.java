@@ -12,6 +12,9 @@ public final class ModItems {
     public static final Supplier<BlockItem> TOWN_HALL = Services.REGISTRY.register(BuiltInRegistries.ITEM, "town_hall",
             () -> new BlockItem(ModBlocks.TOWN_HALL.get(), new Item.Properties()));
 
+    public static final Supplier<BlockItem> SCHOLARS_DESK = Services.REGISTRY.register(BuiltInRegistries.ITEM, "scholars_desk",
+            () -> new BlockItem(ModBlocks.SCHOLARS_DESK.get(), new Item.Properties()));
+
     public static final Supplier<BlockItem> WATCHTOWER = Services.REGISTRY.register(BuiltInRegistries.ITEM, "watchtower",
             () -> new BlockItem(ModBlocks.WATCHTOWER.get(), new Item.Properties()));
 

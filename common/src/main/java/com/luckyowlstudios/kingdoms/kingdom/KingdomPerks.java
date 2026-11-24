@@ -20,7 +20,8 @@ import java.util.function.ToIntFunction;
 /**
  * The kingdom perk tree, and unlocking and upgrading perks.
  * <p>
- * A kingdom earns {@link #POINTS_PER_LEVEL} perk points for each level it has, and spends them on perk tiers. A tier
+ * A kingdom earns {@link #POINTS_PER_LEVEL} perk points for each level it has, and spends them researching perk tiers at
+ * a Scholar's Desk ({@link KingdomResearch}). A tier
  * needs the kingdom to be at that tier's level; the first tier also needs the perk's prerequisites. Only players of
  * {@link #UNLOCK_RANK} spend points. If an operator lowers a kingdom's level, tiers above the new level stop working
  * until it climbs back; nothing is taken away.
@@ -38,6 +39,13 @@ public final class KingdomPerks {
 
     /** The tree's branches, one per row, top to bottom. Each is named by {@code kingdoms.perk.branch.<name>}. */
     public static final List<String> BRANCHES = List.of("prosperity", "defense", "community", "growth");
+
+    /**
+     * How long one Scholar takes to research each tier, by tier number (first, second, third...), in seconds. Two
+     * Scholars take half as long, three a third, and so on. A perk can set its own times with
+     * {@link #tier(int, int, int)} instead.
+     */
+    public static final List<Integer> RESEARCH_SECONDS = List.of(5 * 60, 10 * 60, 20 * 60);
 
     // ---- Prosperity ----
 
@@ -102,8 +110,14 @@ public final class KingdomPerks {
     private KingdomPerks() {
     }
 
+    /** A tier that takes the usual research time for its place in the perk (see {@link #RESEARCH_SECONDS}). */
     private static KingdomPerk.Tier tier(int requiredLevel, int cost) {
-        return new KingdomPerk.Tier(requiredLevel, cost);
+        return new KingdomPerk.Tier(requiredLevel, cost, 0);
+    }
+
+    /** A tier with its own research time, in seconds of one Scholar's work. */
+    private static KingdomPerk.Tier tier(int requiredLevel, int cost, int researchSeconds) {
+        return new KingdomPerk.Tier(requiredLevel, cost, researchSeconds);
     }
 
     /**
@@ -116,7 +130,14 @@ public final class KingdomPerks {
         if (tiers.isEmpty()) {
             throw new IllegalArgumentException("Perk " + name + " has no tiers");
         }
-        KingdomPerk perk = new KingdomPerk(Constants.id(name), icon, List.copyOf(tiers),
+        List<KingdomPerk.Tier> timed = new java.util.ArrayList<>();
+        for (int n = 0; n < tiers.size(); n++) {
+            KingdomPerk.Tier tier = tiers.get(n);
+            int seconds = tier.researchSeconds() > 0 ? tier.researchSeconds()
+                    : RESEARCH_SECONDS.get(Math.min(n, RESEARCH_SECONDS.size() - 1));
+            timed.add(new KingdomPerk.Tier(tier.requiredLevel(), tier.cost(), seconds));
+        }
+        KingdomPerk perk = new KingdomPerk(Constants.id(name), icon, List.copyOf(timed),
                 Arrays.stream(prerequisites).map(KingdomPerk::id).toList(), column, row);
         if (PERKS.putIfAbsent(perk.id(), perk) != null) {
             throw new IllegalStateException("Two perks with the id " + perk.id());
@@ -157,8 +178,12 @@ public final class KingdomPerks {
         return spent;
     }
 
+    /** Points left to spend. The tier being researched has already been paid for. */
     public static int availablePoints(Kingdom kingdom) {
-        return Math.max(0, earnedPoints(kingdom.level()) - spentPoints(kingdom.perks()));
+        int researching = kingdom.research().flatMap(research -> byId(research.perk())
+                .filter(perk -> research.tier() >= 1 && research.tier() <= perk.maxTier())
+                .map(perk -> perk.tier(research.tier()).cost())).orElse(0);
+        return Math.max(0, earnedPoints(kingdom.level()) - spentPoints(kingdom.perks()) - researching);
     }
 
     /** The highest tier of the perk that is working for the kingdom: unlocked, and the kingdom is at its level. 0 if none. */
@@ -179,9 +204,9 @@ public final class KingdomPerks {
         return activeTier(kingdom, perk) > 0;
     }
 
-    /** Why the next tier of a perk can't be bought right now, if it can't. The screen shows the same reason. */
+    /** Why the next tier of a perk can't be researched right now, if it can't. The screen shows the same reason. */
     public enum Blocker {
-        NONE, MAXED, LEVEL_TOO_LOW, MISSING_PREREQUISITE, NOT_ENOUGH_POINTS;
+        NONE, MAXED, RESEARCHING, BUSY, LEVEL_TOO_LOW, MISSING_PREREQUISITE, NOT_ENOUGH_POINTS;
 
         public String translationKey() {
             return "kingdoms.perk.blocker." + this.name().toLowerCase(java.util.Locale.ROOT);
@@ -189,14 +214,22 @@ public final class KingdomPerks {
     }
 
     /**
-     * Checks whether the next tier of a perk could be bought.
+     * Checks whether the next tier of a perk could be researched.
      *
-     * @param tiers the tier the kingdom has of each perk id (0 if none)
+     * @param tiers       the tier the kingdom has of each perk id (0 if none)
+     * @param researching the perk the kingdom is researching now, or null
      */
-    public static Blocker blocker(KingdomPerk perk, int level, int availablePoints, ToIntFunction<ResourceLocation> tiers) {
+    public static Blocker blocker(KingdomPerk perk, int level, int availablePoints, ToIntFunction<ResourceLocation> tiers,
+                                  @org.jetbrains.annotations.Nullable ResourceLocation researching) {
         int next = tiers.applyAsInt(perk.id()) + 1;
         if (next > perk.maxTier()) {
             return Blocker.MAXED;
+        }
+        if (perk.id().equals(researching)) {
+            return Blocker.RESEARCHING;
+        }
+        if (researching != null) {
+            return Blocker.BUSY;
         }
         if (level < perk.tier(next).requiredLevel()) {
             return Blocker.LEVEL_TOO_LOW;
@@ -211,17 +244,21 @@ public final class KingdomPerks {
     }
 
     public static Blocker blocker(Kingdom kingdom, KingdomPerk perk) {
-        return blocker(perk, kingdom.level(), availablePoints(kingdom), kingdom::perkTier);
+        return blocker(perk, kingdom.level(), availablePoints(kingdom), kingdom::perkTier,
+                kingdom.research().map(KingdomResearch.Research::perk).orElse(null));
     }
 
-    /** The player asked to unlock or upgrade a perk for their kingdom, from the Perks tab. */
+    /** The player asked to research the next tier of a perk for their kingdom, from a Scholar's Desk. */
     public static boolean upgrade(ServerPlayer player, String perkId) {
         ResourceLocation id = ResourceLocation.tryParse(perkId);
         Optional<KingdomPerk> perk = id == null ? Optional.empty() : byId(id);
         return perk.isPresent() && upgrade(player, perk.get());
     }
 
-    /** Buys the next tier of a perk (tier 1 unlocks it). */
+    /**
+     * Starts researching the next tier of a perk (tier 1 unlocks it). Its points are spent now; the tier arrives when
+     * the kingdom's Scholars finish (see {@link KingdomResearch}).
+     */
     public static boolean upgrade(ServerPlayer player, KingdomPerk perk) {
         Optional<Kingdom> found = Kingdoms.ofPlayer(player);
         if (found.isEmpty()) {
@@ -241,18 +278,22 @@ public final class KingdomPerks {
             return false;
         }
         int tier = kingdom.perkTier(perk.id()) + 1;
-        KingdomData.get(player.server).setPerkTier(kingdom, perk, tier);
-        // A toast for everyone in the kingdom who's online, as well as the chat message.
+        KingdomResearch.start(player.server, kingdom, perk, tier);
+        return true;
+    }
+
+    /** Gives the kingdom a perk tier, with a toast for every member online and a message in chat. */
+    static void grant(net.minecraft.server.MinecraftServer server, Kingdom kingdom, KingdomPerk perk, int tier) {
+        KingdomData.get(server).setPerkTier(kingdom, perk, tier);
         PerkUnlockedPayload toast = new PerkUnlockedPayload(perk.id(), tier);
         for (java.util.UUID member : kingdom.members()) {
-            ServerPlayer online = player.server.getPlayerList().getPlayer(member);
+            ServerPlayer online = server.getPlayerList().getPlayer(member);
             if (online != null) {
                 online.connection.send(new net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket(toast));
             }
         }
-        Kingdoms.broadcast(player.server, kingdom, tier == 1
+        Kingdoms.broadcast(server, kingdom, tier == 1
                 ? Component.translatable("kingdoms.perk.unlocked", kingdom.displayName(), perk.displayName())
                 : Component.translatable("kingdoms.perk.upgraded", kingdom.displayName(), perk.displayName(), tier));
-        return true;
     }
 }

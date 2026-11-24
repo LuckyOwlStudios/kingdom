@@ -1,5 +1,6 @@
 package com.luckyowlstudios.kingdoms.registry;
 
+import com.luckyowlstudios.kingdoms.block.ScholarsDeskBlock;
 import com.luckyowlstudios.kingdoms.block.TownHallBlock;
 import com.luckyowlstudios.kingdoms.block.WatchtowerBlock;
 import com.luckyowlstudios.kingdoms.platform.Services;
@@ -24,6 +25,14 @@ public final class ModBlocks {
     /** The Innkeeper's job site. See {@link com.luckyowlstudios.kingdoms.kingdom.KingdomTavern}. */
     public static final Supplier<com.luckyowlstudios.kingdoms.block.TavernBlock> TAVERN = Services.REGISTRY.register(BuiltInRegistries.BLOCK, "tavern",
             () -> new com.luckyowlstudios.kingdoms.block.TavernBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.WOOD)
+                    .instrument(NoteBlockInstrument.BASS)
+                    .strength(2.5F)
+                    .sound(SoundType.WOOD)
+                    .ignitedByLava()));
+
+    public static final Supplier<ScholarsDeskBlock> SCHOLARS_DESK = Services.REGISTRY.register(BuiltInRegistries.BLOCK, "scholars_desk",
+            () -> new ScholarsDeskBlock(BlockBehaviour.Properties.of()
                     .mapColor(MapColor.WOOD)
                     .instrument(NoteBlockInstrument.BASS)
                     .strength(2.5F)

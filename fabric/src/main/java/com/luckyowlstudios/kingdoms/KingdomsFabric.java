@@ -36,6 +36,7 @@ public class KingdomsFabric implements ModInitializer {
         ItemGroupEvents.modifyEntriesEvent(CreativeModeTabs.FUNCTIONAL_BLOCKS)
                 .register(entries -> {
                     entries.accept(ModItems.TOWN_HALL.get());
+                    entries.accept(ModItems.SCHOLARS_DESK.get());
                     entries.accept(ModItems.WATCHTOWER.get());
                     entries.accept(ModItems.TAVERN.get());
                 });
@@ -63,6 +64,12 @@ public class KingdomsFabric implements ModInitializer {
                 (payload, context) -> Diplomacy.handle(context.player(), payload));
         ServerPlayNetworking.registerGlobalReceiver(CreateKingdomPayload.TYPE,
                 (payload, context) -> Kingdoms.tryCreate(context.player(), payload));
+        PayloadTypeRegistry.playS2C().register(com.luckyowlstudios.kingdoms.network.ResearchViewPayload.TYPE,
+                com.luckyowlstudios.kingdoms.network.ResearchViewPayload.STREAM_CODEC);
+        PayloadTypeRegistry.playC2S().register(com.luckyowlstudios.kingdoms.network.ResearchActionPayload.TYPE,
+                com.luckyowlstudios.kingdoms.network.ResearchActionPayload.STREAM_CODEC);
+        ServerPlayNetworking.registerGlobalReceiver(com.luckyowlstudios.kingdoms.network.ResearchActionPayload.TYPE,
+                (payload, context) -> com.luckyowlstudios.kingdoms.kingdom.KingdomResearch.handle(context.player(), payload));
         ServerPlayNetworking.registerGlobalReceiver(CloseTownHallPayload.TYPE,
                 (payload, context) -> TownHallBlockEntity.onScreenClosed(context.player(), payload.townHall()));
     }

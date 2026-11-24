@@ -27,6 +27,8 @@ public class PlaceholderScreen<T extends AbstractContainerMenu> extends Abstract
 
     @Override
     protected void renderBg(GuiGraphics graphics, float partialTick, int mouseX, int mouseY) {
+        // Darken the world behind the panel so it is easier to read.
+        this.renderTransparentBackground(graphics);
         int x = this.leftPos;
         int y = this.topPos;
         graphics.fill(x, y, x + this.imageWidth, y + this.imageHeight, 0xFF3B2A1A);
