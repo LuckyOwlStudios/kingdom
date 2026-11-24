@@ -736,6 +736,61 @@ public class KingdomsGameTests implements FabricGameTest {
     }
 
     @GameTest(template = EMPTY_STRUCTURE)
+    public void scholarFromOutsideJoinsTheKingdom(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos hall = isolatedHall(helper);
+        ServerPlayer leader = helper.makeMockServerPlayerInLevel();
+        leader.moveTo(hall.getX() + 1.5, hall.getY(), hall.getZ() + 0.5);
+        Kingdom kingdom = Kingdoms.tryCreate(leader, new CreateKingdomPayload(hall, "Scholarton " + level.getGameTime(), DyeColor.CYAN)).orElseThrow();
+        BlockPos desk = hall.east(3);
+        level.setBlockAndUpdate(desk, ModBlocks.SCHOLARS_DESK.get().defaultBlockState());
+
+        // A villager that didn't move in through the Town Hall (a spawn egg, a nearby village) takes the desk.
+        Villager villager = EntityType.VILLAGER.create(level);
+        villager.moveTo(desk.getX() + 1.5, desk.getY(), desk.getZ() + 0.5);
+        level.addFreshEntity(villager);
+        villager.getBrain().setMemory(net.minecraft.world.entity.ai.memory.MemoryModuleType.JOB_SITE, GlobalPos.of(level.dimension(), desk));
+        helper.assertFalse(KingdomVillagers.checkWorker(villager), "a villager without the Scholar job joined");
+
+        villager.setVillagerData(villager.getVillagerData().setProfession(ModVillagers.SCHOLAR_PROFESSION.get()));
+        helper.assertTrue(KingdomVillagers.checkWorker(villager), "the Scholar didn't join the kingdom");
+        helper.assertTrue(kingdom.residents().contains(villager.getUUID()), "the Scholar isn't a resident");
+        helper.assertFalse(KingdomVillagers.checkWorker(villager), "the Scholar joined twice");
+        helper.assertTrue(KingdomResearch.workingScholars(level.getServer(), kingdom) == 1, "the Scholar isn't working");
+
+        villager.discard();
+        Kingdoms.leave(leader);
+        helper.succeed();
+    }
+
+    @GameTest(template = EMPTY_STRUCTURE)
+    public void creativePlayersUnlockPerksStraightAway(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos hall = isolatedHall(helper);
+        ServerPlayer leader = helper.makeMockServerPlayerInLevel();
+        leader.moveTo(hall.getX() + 1.5, hall.getY(), hall.getZ() + 0.5);
+        Kingdom kingdom = Kingdoms.tryCreate(leader, new CreateKingdomPayload(hall, "Creativia " + level.getGameTime(), DyeColor.CYAN)).orElseThrow();
+        String rally = KingdomPerks.RALLY.id().toString();
+
+        // Unlocking the perk being researched finishes the research.
+        leader.setGameMode(net.minecraft.world.level.GameType.SURVIVAL);
+        helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.BOUNTIFUL_HARVEST), "couldn't start researching");
+        helper.assertFalse(KingdomPerks.forceUnlock(leader, rally), "unlocked a perk outside Creative");
+        leader.setGameMode(net.minecraft.world.level.GameType.CREATIVE);
+        helper.assertTrue(KingdomPerks.forceUnlock(leader, KingdomPerks.BOUNTIFUL_HARVEST.id().toString()), "Creative couldn't finish the research");
+        helper.assertTrue(kingdom.research().isEmpty() && kingdom.perkTier(KingdomPerks.BOUNTIFUL_HARVEST.id()) == 1,
+                "the research didn't finish");
+
+        // Rally needs level 3, Fortified Walls and more points than the kingdom has: Creative skips all that.
+        helper.assertTrue(KingdomPerks.forceUnlock(leader, rally), "Creative couldn't unlock Rally");
+        helper.assertTrue(kingdom.perkTier(KingdomPerks.RALLY.id()) == 1, "Rally isn't at tier 1");
+        helper.assertTrue(KingdomPerks.forceUnlock(leader, rally) && KingdomPerks.forceUnlock(leader, rally), "Creative couldn't upgrade Rally");
+        helper.assertFalse(KingdomPerks.forceUnlock(leader, rally), "upgraded Rally past its last tier");
+        Kingdoms.leave(leader);
+        helper.succeed();
+    }
+
+    @GameTest(template = EMPTY_STRUCTURE)
     public void townHallAdvisorJoinsTheKingdom(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         BlockPos hall = isolatedHall(helper);

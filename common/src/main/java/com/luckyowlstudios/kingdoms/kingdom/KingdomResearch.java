@@ -225,6 +225,7 @@ public final class KingdomResearch {
         switch (action.action()) {
             case START -> KingdomPerks.upgrade(player, action.perk());
             case CANCEL -> cancel(player);
+            case FORCE_UNLOCK -> KingdomPerks.forceUnlock(player, action.perk());
             default -> {
             }
         }

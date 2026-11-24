@@ -282,6 +282,30 @@ public final class KingdomPerks {
         return true;
     }
 
+    /**
+     * Creative mode: unlocks the next tier of a perk for the player's kingdom straight away, whatever its points, level,
+     * prerequisites and research. If that tier is the one being researched, the research finishes. Checked on the
+     * server, so only a player who really is in Creative can do it.
+     */
+    public static boolean forceUnlock(ServerPlayer player, String perkId) {
+        ResourceLocation id = ResourceLocation.tryParse(perkId);
+        Optional<KingdomPerk> perk = id == null ? Optional.empty() : byId(id);
+        Optional<Kingdom> found = Kingdoms.ofPlayer(player);
+        if (!player.isCreative() || perk.isEmpty() || found.isEmpty()) {
+            return false;
+        }
+        Kingdom kingdom = found.get();
+        int tier = kingdom.perkTier(perk.get().id()) + 1;
+        if (tier > perk.get().maxTier()) {
+            return false;
+        }
+        if (kingdom.research().filter(research -> research.perk().equals(perk.get().id())).isPresent()) {
+            return KingdomResearch.finish(player.server, kingdom);
+        }
+        grant(player.server, kingdom, perk.get(), tier);
+        return true;
+    }
+
     /** Gives the kingdom a perk tier, with a toast for every member online and a message in chat. */
     static void grant(net.minecraft.server.MinecraftServer server, Kingdom kingdom, KingdomPerk perk, int tier) {
         KingdomData.get(server).setPerkTier(kingdom, perk, tier);

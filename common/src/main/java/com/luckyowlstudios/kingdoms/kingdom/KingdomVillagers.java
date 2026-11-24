@@ -156,6 +156,50 @@ public final class KingdomVillagers {
         return true;
     }
 
+    /**
+     * A villager who works at one of the kingdom's work blocks (a Scholar at a Scholar's Desk, an Innkeeper at a Tavern,
+     * a Lookout at a Watchtower) on a kingdom's land belongs to that kingdom, the same way the Advisor does. Without
+     * this, only villagers who moved in through the Town Hall count, so a villager from a nearby village (or a spawn
+     * egg) that takes the job would never do any work. Like the Advisor, it joins even past the villager cap. Called
+     * now and then for every villager.
+     *
+     * @return true if the villager just joined
+     */
+    public static boolean checkWorker(Villager villager) {
+        if (!(villager.level() instanceof ServerLevel world)) {
+            return false;
+        }
+        var profession = villager.getVillagerData().getProfession();
+        net.minecraft.world.level.block.Block workBlock;
+        if (profession == ModVillagers.SCHOLAR_PROFESSION.get()) {
+            workBlock = com.luckyowlstudios.kingdoms.registry.ModBlocks.SCHOLARS_DESK.get();
+        } else if (profession == ModVillagers.INNKEEPER_PROFESSION.get()) {
+            workBlock = com.luckyowlstudios.kingdoms.registry.ModBlocks.TAVERN.get();
+        } else if (profession == ModVillagers.LOOKOUT_PROFESSION.get()) {
+            workBlock = com.luckyowlstudios.kingdoms.registry.ModBlocks.WATCHTOWER.get();
+        } else {
+            return false;
+        }
+        Optional<GlobalPos> site = villager.getBrain().getMemory(MemoryModuleType.JOB_SITE);
+        if (site.isEmpty() || !site.get().dimension().equals(world.dimension()) || !world.isLoaded(site.get().pos())
+                || !world.getBlockState(site.get().pos()).is(workBlock)) {
+            return false;
+        }
+        KingdomData data = KingdomData.get(world.getServer());
+        Optional<Kingdom> found = data.claimedBy(ChunkClaim.of(site.get()));
+        if (found.isEmpty() || found.get().residents().contains(villager.getUUID())) {
+            return false;
+        }
+        Kingdom kingdom = found.get();
+        data.removeResident(villager.getUUID());
+        villager.addTag(RESIDENT_TAG);
+        data.addResident(kingdom, villager.getUUID());
+        Kingdoms.broadcast(world.getServer(), kingdom, Component.translatable("kingdoms.kingdom.worker_joined",
+                villager.getTypeName(), kingdom.displayName(),
+                kingdom.residents().size(), kingdom.levelInfo().villagerCap()));
+        return true;
+    }
+
     /** An entity is being removed for good. If it was one of a kingdom's villagers, it no longer counts. */
     public static void onRemoved(Entity entity, Entity.RemovalReason reason) {
         if (!reason.shouldDestroy() || !(entity instanceof Villager) || !entity.getTags().contains(RESIDENT_TAG)
