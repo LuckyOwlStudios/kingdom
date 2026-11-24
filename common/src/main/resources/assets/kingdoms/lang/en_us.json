@@ -75,7 +75,7 @@
   "kingdoms.kingdom.screen.color": "Color: %s",
   "kingdoms.kingdom.screen.member_count": "Members: %s",
   "kingdoms.kingdom.screen.your_rank": "Your rank: %s",
-  "kingdoms.kingdom.screen.map_scale": "Map size %s/%s",
+  "kingdoms.kingdom.screen.map_scale": "Map size: %s / %s",
   "kingdoms.kingdom.screen.map_open": "Click to open the map",
   "kingdoms.kingdom.map.title": "Map of %s",
   "kingdoms.kingdom.map.reset": "Reset View",
@@ -275,5 +275,10 @@
   "kingdoms.kingdom.screen.level_bar": "Level %s   %s / %s XP",
   "kingdoms.kingdom.screen.level_bar.max": "Level %s (highest level)",
   "kingdoms.kingdom.screen.level_bar.tooltip": "Whenever a member gains experience, the kingdom gains the same amount. Each level takes more XP than the last.",
-  "kingdoms.kingdom.xp.added": "Gave %s XP to %s"
+  "kingdoms.kingdom.xp.added": "Gave %s XP to %s",
+  "kingdoms.kingdom.screen.level_bar": "%s / %s XP to level %s",
+  "kingdoms.kingdom.screen.level_bar.max": "Highest level reached",
+  "kingdoms.kingdom.screen.level_bar.tooltip": "Members earn kingdom XP whenever they gain experience. Each level takes more XP than the last.",
+  "kingdoms.kingdom.xp.added": "Gave %s XP to %s",
+  "kingdoms.kingdom.screen.level": "Level %s"
 }
