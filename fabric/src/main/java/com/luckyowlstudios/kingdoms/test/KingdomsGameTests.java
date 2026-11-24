@@ -422,7 +422,7 @@ public class KingdomsGameTests implements FabricGameTest {
         helper.succeed();
     }
 
-    @GameTest(template = EMPTY_STRUCTURE)
+    @GameTest(template = EMPTY_STRUCTURE, timeoutTicks = 400)
     public void taxCollectorFillsTheTreasury(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         BlockPos hall = isolatedHall(helper);
@@ -431,40 +431,65 @@ public class KingdomsGameTests implements FabricGameTest {
         leader.setGameMode(net.minecraft.world.level.GameType.SURVIVAL);
         Kingdom kingdom = Kingdoms.tryCreate(leader, new CreateKingdomPayload(hall, "Taxbury " + level.getGameTime(), DyeColor.ORANGE)).orElseThrow();
         Kingdoms.setLevel(level.getServer(), kingdom, 3);
-        Villager jobless = KingdomVillagers.morning(level.getServer(), kingdom).orElseThrow();
-        Villager farmer = KingdomVillagers.morning(level.getServer(), kingdom).orElseThrow();
-        jobless.setVillagerData(jobless.getVillagerData().setProfession(net.minecraft.world.entity.npc.VillagerProfession.NONE));
-        farmer.setVillagerData(farmer.getVillagerData().setProfession(net.minecraft.world.entity.npc.VillagerProfession.FARMER).setLevel(3));
-
-        TaxCollector.morning(level.getServer(), kingdom);
-        helper.assertTrue(kingdom.taxes() == 0, "taxes without the perk");
-
-        helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.TAX_COLLECTOR), "couldn't unlock Tax Collector");
-        TaxCollector.morning(level.getServer(), kingdom);
-        helper.assertTrue(kingdom.taxes() == 2, "tier 1 should take 1 per villager, got " + kingdom.taxes());
-        helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.TAX_COLLECTOR), "couldn't upgrade Tax Collector");
-        TaxCollector.morning(level.getServer(), kingdom);
-        helper.assertTrue(kingdom.taxes() == 2 + 3, "tier 2: the farmer should pay 2, got " + (kingdom.taxes() - 2));
-        Kingdoms.setLevel(level.getServer(), kingdom, 4);
-        helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.TAX_COLLECTOR), "couldn't buy Tax Collector tier 3");
-        TaxCollector.morning(level.getServer(), kingdom);
-        helper.assertTrue(kingdom.taxes() == 5 + 4, "tier 3: the journeyman farmer should pay 3, got " + (kingdom.taxes() - 5));
-
-        // The treasury fills up.
-        int cap = TaxCollector.treasuryCap(level.getServer(), kingdom);
-        for (int day = 0; day < 100; day++) {
-            TaxCollector.morning(level.getServer(), kingdom);
+        // Villagers only move in while the Town Hall is loaded, so keep it loaded like a nearby player would.
+        ChunkClaim center = ChunkClaim.of(GlobalPos.of(level.dimension(), hall));
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                level.setChunkForced(center.x() + dx, center.z() + dz, true);
+            }
         }
-        helper.assertTrue(kingdom.taxes() == cap, "treasury should stop at " + cap + ", has " + kingdom.taxes());
+        helper.startSequence().thenWaitUntil(() -> {
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    helper.assertTrue(level.isPositionEntityTicking(new net.minecraft.world.level.ChunkPos(center.x() + dx, center.z() + dz).getMiddleBlockPosition(hall.getY())),
+                            "forced chunks aren't loaded yet");
+                }
+            }
+        }).thenExecute(() -> {
+            Villager jobless = KingdomVillagers.morning(level.getServer(), kingdom).orElseThrow(
+                    () -> new net.minecraft.gametest.framework.GameTestAssertException("no villager moved in"));
+            Villager farmer = KingdomVillagers.morning(level.getServer(), kingdom).orElseThrow(
+                    () -> new net.minecraft.gametest.framework.GameTestAssertException("no second villager moved in"));
+            try {
+                jobless.setVillagerData(jobless.getVillagerData().setProfession(net.minecraft.world.entity.npc.VillagerProfession.NONE));
+                farmer.setVillagerData(farmer.getVillagerData().setProfession(net.minecraft.world.entity.npc.VillagerProfession.FARMER).setLevel(3));
 
-        helper.assertTrue(TaxCollector.collect(leader), "leader couldn't collect");
-        helper.assertTrue(kingdom.taxes() == 0, "treasury wasn't emptied");
-        int held = leader.getInventory().countItem(net.minecraft.world.item.Items.EMERALD);
-        helper.assertTrue(held == cap, "leader should hold " + cap + " emeralds, has " + held);
-        helper.assertFalse(TaxCollector.collect(leader), "collected from an empty treasury");
+                TaxCollector.morning(level.getServer(), kingdom);
+                helper.assertTrue(kingdom.taxes() == 0, "taxes without the perk");
 
-        Kingdoms.leave(leader);
-        java.util.List.of(jobless, farmer).forEach(net.minecraft.world.entity.Entity::discard);
-        helper.succeed();
+                helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.TAX_COLLECTOR), "couldn't unlock Tax Collector");
+                TaxCollector.morning(level.getServer(), kingdom);
+                helper.assertTrue(kingdom.taxes() == 2, "tier 1 should take 1 per villager, got " + kingdom.taxes());
+                helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.TAX_COLLECTOR), "couldn't upgrade Tax Collector");
+                TaxCollector.morning(level.getServer(), kingdom);
+                helper.assertTrue(kingdom.taxes() == 2 + 3, "tier 2: the farmer should pay 2, got " + (kingdom.taxes() - 2));
+                Kingdoms.setLevel(level.getServer(), kingdom, 4);
+                helper.assertTrue(KingdomPerks.upgrade(leader, KingdomPerks.TAX_COLLECTOR), "couldn't buy Tax Collector tier 3");
+                TaxCollector.morning(level.getServer(), kingdom);
+                helper.assertTrue(kingdom.taxes() == 5 + 4, "tier 3: the journeyman farmer should pay 3, got " + (kingdom.taxes() - 5));
+
+                // The treasury fills up.
+                int cap = TaxCollector.treasuryCap(level.getServer(), kingdom);
+                for (int day = 0; day < 100; day++) {
+                    TaxCollector.morning(level.getServer(), kingdom);
+                }
+                helper.assertTrue(kingdom.taxes() == cap, "treasury should stop at " + cap + ", has " + kingdom.taxes());
+                helper.assertTrue(KingdomScreens.view(leader, kingdom).growth().taxes() == cap, "screen got the wrong treasury");
+
+                helper.assertTrue(TaxCollector.collect(leader), "leader couldn't collect");
+                helper.assertTrue(kingdom.taxes() == 0, "treasury wasn't emptied");
+                int held = leader.getInventory().countItem(net.minecraft.world.item.Items.EMERALD);
+                helper.assertTrue(held == cap, "leader should hold " + cap + " emeralds, has " + held);
+                helper.assertFalse(TaxCollector.collect(leader), "collected from an empty treasury");
+            } finally {
+                Kingdoms.leave(leader);
+                java.util.List.of(jobless, farmer).forEach(net.minecraft.world.entity.Entity::discard);
+                for (int dx = -1; dx <= 1; dx++) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        level.setChunkForced(center.x() + dx, center.z() + dz, false);
+                    }
+                }
+            }
+        }).thenSucceed();
     }
 }
