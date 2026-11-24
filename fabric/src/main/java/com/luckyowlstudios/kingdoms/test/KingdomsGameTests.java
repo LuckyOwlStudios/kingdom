@@ -7,6 +7,7 @@ import com.luckyowlstudios.kingdoms.kingdom.KingdomData;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomCelebration;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomLevel;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomVillagers;
+import com.luckyowlstudios.kingdoms.kingdom.KingdomTavern;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomMaps;
 import com.luckyowlstudios.kingdoms.kingdom.Homecoming;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomPerkEffects;
@@ -644,5 +645,79 @@ public class KingdomsGameTests implements FabricGameTest {
         helper.assertTrue(kingdom.residents().isEmpty(), "a removed Advisor still counts");
         Kingdoms.leave(leader);
         helper.succeed();
+    }
+
+    @GameTest(template = EMPTY_STRUCTURE)
+    public void tavernIsAJobSite(GameTestHelper helper) {
+        BlockPos pos = new BlockPos(1, 2, 1);
+        helper.setBlock(pos, ModBlocks.TAVERN.get());
+        helper.succeedWhen(() -> helper.assertTrue(helper.getLevel().getPoiManager().getType(helper.absolutePos(pos))
+                .map(type -> type.is(ModVillagers.TAVERN_POI)).orElse(false), "tavern isn't a point of interest"));
+    }
+
+    @GameTest(template = EMPTY_STRUCTURE, timeoutTicks = 400)
+    public void innkeeperBringsAVillagerAtNight(GameTestHelper helper) {
+        // Night numbers go up as night falls, not at dawn.
+        long night = KingdomTavern.NIGHT_START;
+        helper.assertTrue(KingdomTavern.nightOf(night - 1) + 1 == KingdomTavern.nightOf(night), "night didn't fall at nightfall");
+        helper.assertTrue(KingdomTavern.nightOf(night) == KingdomTavern.nightOf(24000L + night - 1), "a new night started before the next nightfall");
+
+        ServerLevel level = helper.getLevel();
+        BlockPos hall = isolatedHall(helper);
+        ServerPlayer leader = helper.makeMockServerPlayerInLevel();
+        leader.moveTo(hall.getX() + 1.5, hall.getY(), hall.getZ() + 0.5);
+        Kingdom kingdom = Kingdoms.tryCreate(leader, new CreateKingdomPayload(hall, "Innsbury " + level.getGameTime(), DyeColor.ORANGE)).orElseThrow();
+        Kingdoms.setLevel(level.getServer(), kingdom, 2);
+        ChunkClaim center = ChunkClaim.of(GlobalPos.of(level.dimension(), hall));
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                level.setChunkForced(center.x() + dx, center.z() + dz, true);
+            }
+        }
+        BlockPos tavern = hall.east(3);
+        helper.startSequence().thenWaitUntil(() -> {
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    helper.assertTrue(level.isPositionEntityTicking(new net.minecraft.world.level.ChunkPos(center.x() + dx, center.z() + dz).getMiddleBlockPosition(hall.getY())),
+                            "forced chunks aren't loaded yet");
+                }
+            }
+        }).thenExecute(() -> {
+            level.setBlockAndUpdate(tavern, ModBlocks.TAVERN.get().defaultBlockState());
+            // A Tavern with no Innkeeper doesn't bring anyone.
+            helper.assertTrue(KingdomTavern.nightfall(level.getServer(), kingdom).isEmpty(), "a villager moved in at night without an Innkeeper");
+
+            // A villager of the kingdom takes the Tavern job.
+            Villager innkeeper = KingdomVillagers.morning(level.getServer(), kingdom).orElseThrow(
+                    () -> new net.minecraft.gametest.framework.GameTestAssertException("no villager moved in"));
+            innkeeper.getBrain().setMemory(net.minecraft.world.entity.ai.memory.MemoryModuleType.JOB_SITE, GlobalPos.of(level.dimension(), tavern));
+            innkeeper.setVillagerData(innkeeper.getVillagerData().setProfession(ModVillagers.INNKEEPER_PROFESSION.get()));
+            helper.assertTrue(KingdomTavern.hasInnkeeper(level.getServer(), kingdom), "the Innkeeper isn't counted");
+
+            Villager traveller = KingdomTavern.nightfall(level.getServer(), kingdom).orElseThrow(
+                    () -> new net.minecraft.gametest.framework.GameTestAssertException("no villager moved in at night"));
+            helper.assertTrue(traveller.getTags().contains(KingdomVillagers.RESIDENT_TAG) && kingdom.residents().contains(traveller.getUUID()),
+                    "the night traveller isn't a resident");
+
+            // Still capped by the kingdom's level.
+            int cap = kingdom.levelInfo().villagerCap();
+            while (kingdom.residents().size() < cap) {
+                helper.assertTrue(KingdomVillagers.morning(level.getServer(), kingdom).isPresent(), "couldn't fill the kingdom");
+            }
+            helper.assertTrue(KingdomTavern.nightfall(level.getServer(), kingdom).isEmpty(), "a villager moved in at night past the cap");
+
+            // An Innkeeper whose Tavern is gone doesn't count.
+            level.removeBlock(tavern, false);
+            helper.assertFalse(KingdomTavern.hasInnkeeper(level.getServer(), kingdom), "an Innkeeper without a Tavern still counts");
+
+            java.util.List.copyOf(kingdom.residents()).forEach(id -> java.util.Optional.ofNullable(level.getEntity(id))
+                    .ifPresent(net.minecraft.world.entity.Entity::discard));
+            Kingdoms.leave(leader);
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    level.setChunkForced(center.x() + dx, center.z() + dz, false);
+                }
+            }
+        }).thenSucceed();
     }
 }

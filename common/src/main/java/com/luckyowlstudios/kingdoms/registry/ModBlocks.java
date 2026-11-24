@@ -20,6 +20,15 @@ public final class ModBlocks {
                     .sound(SoundType.WOOD)
                     .noOcclusion()));
 
+    /** The Innkeeper's job site. See {@link com.luckyowlstudios.kingdoms.kingdom.KingdomTavern}. */
+    public static final Supplier<com.luckyowlstudios.kingdoms.block.TavernBlock> TAVERN = Services.REGISTRY.register(BuiltInRegistries.BLOCK, "tavern",
+            () -> new com.luckyowlstudios.kingdoms.block.TavernBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.WOOD)
+                    .instrument(NoteBlockInstrument.BASS)
+                    .strength(2.5F)
+                    .sound(SoundType.WOOD)
+                    .ignitedByLava()));
+
     private ModBlocks() {
     }
 

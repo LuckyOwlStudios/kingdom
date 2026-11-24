@@ -38,6 +38,9 @@ public final class KingdomData extends SavedData {
     private final Map<ChunkClaim, UUID> claimOwners = new HashMap<>();
     /** The overworld day the last morning was handled on, so villagers move in once a day. -1 until the first check. */
     private long lastDay = -1;
+    /** No night noted yet. Night numbers can be negative (before the first nightfall), so -1 won't do. */
+    static final long NO_NIGHT = Long.MIN_VALUE;
+    private long lastNight = NO_NIGHT;
 
     public static KingdomData get(MinecraftServer server) {
         return server.overworld().getDataStorage().computeIfAbsent(FACTORY, FILE_NAME);
@@ -330,12 +333,22 @@ public final class KingdomData extends SavedData {
         this.setDirty();
     }
 
+    long lastNight() {
+        return this.lastNight;
+    }
+
+    void setLastNight(long night) {
+        this.lastNight = night;
+        this.setDirty();
+    }
+
     @Override
     public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
         LIST_CODEC.encodeStart(registries.createSerializationContext(NbtOps.INSTANCE), java.util.List.copyOf(this.kingdoms.values()))
                 .resultOrPartial(error -> Constants.LOG.error("Couldn't save kingdoms: {}", error))
                 .ifPresent(list -> tag.put("kingdoms", list));
         tag.putLong("last_day", this.lastDay);
+        tag.putLong("last_night", this.lastNight);
         return tag;
     }
 
@@ -360,6 +373,7 @@ public final class KingdomData extends SavedData {
         // Fit every kingdom's land to its level, in case the level table changed since the world was saved.
         data.kingdoms.values().forEach(data::claimLand);
         data.lastDay = tag.contains("last_day") ? tag.getLong("last_day") : -1;
+        data.lastNight = tag.contains("last_night") ? tag.getLong("last_night") : NO_NIGHT;
         return data;
     }
 }
