@@ -15,5 +15,6 @@ public final class ModRegistry {
         ModEntities.init();
         ModItems.init();
         ModMenus.init();
+        ModVillagers.init();
     }
 }

@@ -3,10 +3,12 @@ package com.luckyowlstudios.kingdoms.platform;
 import com.luckyowlstudios.kingdoms.Constants;
 import com.luckyowlstudios.kingdoms.platform.services.IRegistryHelper;
 import net.fabricmc.fabric.api.object.builder.v1.block.entity.FabricBlockEntityTypeBuilder;
+import net.fabricmc.fabric.api.object.builder.v1.world.poi.PointOfInterestHelper;
 import net.minecraft.core.Registry;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.village.poi.PoiType;
 import net.minecraft.world.flag.FeatureFlags;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.MenuType;
@@ -34,6 +36,13 @@ public class FabricRegistryHelper implements IRegistryHelper {
     @Override
     public <T extends AbstractContainerMenu> MenuType<T> menuType(MenuFactory<T> factory) {
         return new MenuType<>(factory::create, FeatureFlags.VANILLA_SET);
+    }
+
+    @Override
+    public Supplier<PoiType> poiType(String name, int maxTickets, int validRange, Supplier<? extends Block> block) {
+        // Fabric's helper also tells the game which block states belong to the point of interest.
+        PoiType value = PointOfInterestHelper.register(ResourceLocation.fromNamespaceAndPath(Constants.MOD_ID, name), maxTickets, validRange, block.get());
+        return () -> value;
     }
 
     @Override
