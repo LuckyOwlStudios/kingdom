@@ -93,7 +93,7 @@ public final class KingdomTavern {
                 || !world.isLoaded(site.get().pos()) || !world.getBlockState(site.get().pos()).is(ModBlocks.TAVERN.get())) {
             return false;
         }
-        return data.claimedBy(ChunkClaim.of(site.get())).filter(owner -> owner == kingdom).isPresent();
+        return KingdomWorkstations.belongsTo(world.getServer(), site.get(), kingdom);
     }
 
     private static Villager findVillager(MinecraftServer server, UUID id) {
@@ -109,7 +109,7 @@ public final class KingdomTavern {
     /** A player right-clicked a Tavern: tell them whether it's drawing travellers into their kingdom. */
     public static void onTavernUsed(ServerPlayer player, BlockPos pos) {
         KingdomData data = KingdomData.get(player.server);
-        Optional<Kingdom> owner = data.claimedBy(ChunkClaim.of(GlobalPos.of(player.level().dimension(), pos)));
+        Optional<Kingdom> owner = KingdomWorkstations.owner(player.server, GlobalPos.of(player.level().dimension(), pos));
         Optional<Kingdom> own = Kingdoms.ofPlayer(player);
         String key;
         if (own.isEmpty() || owner.isEmpty() || owner.get() != own.get()) {
