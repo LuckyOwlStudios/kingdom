@@ -199,7 +199,7 @@ public final class KingdomVillagers {
             return false;
         }
         KingdomData data = KingdomData.get(world.getServer());
-        Optional<Kingdom> found = data.claimedBy(ChunkClaim.of(site.get()));
+        Optional<Kingdom> found = KingdomWorkstations.owner(world.getServer(), site.get());
         if (found.isEmpty() || found.get().residents().contains(villager.getUUID())) {
             return false;
         }

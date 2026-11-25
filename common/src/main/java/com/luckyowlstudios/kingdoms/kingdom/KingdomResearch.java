@@ -179,7 +179,7 @@ public final class KingdomResearch {
                 || !world.isLoaded(site.get().pos()) || !world.getBlockState(site.get().pos()).is(ModBlocks.SCHOLARS_DESK.get())) {
             return false;
         }
-        return data.claimedBy(ChunkClaim.of(site.get())).filter(owner -> owner == kingdom).isPresent();
+        return KingdomWorkstations.belongsTo(world.getServer(), site.get(), kingdom);
     }
 
     private static Villager findVillager(MinecraftServer server, UUID id) {
@@ -202,7 +202,7 @@ public final class KingdomResearch {
             return;
         }
         GlobalPos desk = GlobalPos.of(player.level().dimension(), pos);
-        Optional<Kingdom> landOwner = Kingdoms.claimedBy(player.server, desk);
+        Optional<Kingdom> landOwner = KingdomWorkstations.owner(player.server, desk);
         if (landOwner.isEmpty() || landOwner.get() != own.get()) {
             player.displayClientMessage(Component.translatable("kingdoms.research.desk.outside_land", own.get().displayName()), true);
             return;
@@ -239,7 +239,7 @@ public final class KingdomResearch {
                 || !player.level().getBlockState(desk.pos()).is(ModBlocks.SCHOLARS_DESK.get())) {
             return false;
         }
-        return Kingdoms.claimedBy(player.server, desk).filter(owner -> owner == kingdom).isPresent();
+        return KingdomWorkstations.belongsTo(player.server, desk, kingdom);
     }
 
     public static ResearchViewPayload view(ServerPlayer viewer, Kingdom kingdom, BlockPos desk) {

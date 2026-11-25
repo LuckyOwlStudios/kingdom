@@ -17,6 +17,7 @@ import com.luckyowlstudios.kingdoms.kingdom.KingdomPerkEffects;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomPerk;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomPerks;
 import com.luckyowlstudios.kingdoms.kingdom.KingdomResearch;
+import com.luckyowlstudios.kingdoms.kingdom.KingdomWorkstations;
 import com.luckyowlstudios.kingdoms.kingdom.SharedVault;
 import com.luckyowlstudios.kingdoms.kingdom.SharedXp;
 import com.luckyowlstudios.kingdoms.kingdom.TaxCollector;
@@ -743,6 +744,33 @@ public class KingdomsGameTests implements FabricGameTest {
                         Kingdoms.leave(leader);
                     }
                 }).thenSucceed();
+    }
+
+    @GameTest(template = EMPTY_STRUCTURE)
+    public void workstationsBelongToTheKingdomThatPlacedThem(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos hall = isolatedHall(helper);
+        ServerPlayer leader = helper.makeMockServerPlayerInLevel();
+        leader.moveTo(hall.getX() + 1.5, hall.getY(), hall.getZ() + 0.5);
+        Kingdom kingdom = Kingdoms.tryCreate(leader, new CreateKingdomPayload(hall, "Deskholm " + level.getGameTime(), DyeColor.CYAN)).orElseThrow();
+        var server = level.getServer();
+
+        // Off the kingdom's land, a desk belongs to nobody until a member places it.
+        GlobalPos far = GlobalPos.of(level.dimension(), hall.offset(0, 0, -16 * 40));
+        helper.assertTrue(KingdomWorkstations.owner(server, far).isEmpty(), "a desk off the land belongs to someone");
+        BlockPos desk = far.pos();
+        KingdomWorkstations.onPlaced(level, desk, ModBlocks.SCHOLARS_DESK.get().defaultBlockState(), leader);
+        helper.assertTrue(KingdomWorkstations.belongsTo(server, far, kingdom), "a member's desk doesn't belong to their kingdom");
+
+        // Broken: nobody's again.
+        KingdomWorkstations.onRemoved(level, desk, ModBlocks.SCHOLARS_DESK.get().defaultBlockState(), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+        helper.assertTrue(KingdomWorkstations.owner(server, far).isEmpty(), "a broken desk still belongs to the kingdom");
+
+        // On the land, a desk anyone placed belongs to the kingdom.
+        helper.assertTrue(KingdomWorkstations.belongsTo(server, GlobalPos.of(level.dimension(), hall.east(3)), kingdom),
+                "a desk on the land doesn't belong to the kingdom");
+        Kingdoms.leave(leader);
+        helper.succeed();
     }
 
     @GameTest(template = EMPTY_STRUCTURE)

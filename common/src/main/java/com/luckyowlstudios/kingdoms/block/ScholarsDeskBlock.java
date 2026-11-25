@@ -49,4 +49,18 @@ public class ScholarsDeskBlock extends HorizontalDirectionalBlock {
         }
         return InteractionResult.sidedSuccess(level.isClientSide);
     }
+
+    /** Placed by a kingdom member: it belongs to their kingdom (see KingdomWorkstations). */
+    @Override
+    public void setPlacedBy(Level level, BlockPos pos, BlockState state, @org.jetbrains.annotations.Nullable net.minecraft.world.entity.LivingEntity placer,
+                            net.minecraft.world.item.ItemStack stack) {
+        super.setPlacedBy(level, pos, state, placer, stack);
+        com.luckyowlstudios.kingdoms.kingdom.KingdomWorkstations.onPlaced(level, pos, state, placer);
+    }
+
+    @Override
+    protected void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean movedByPiston) {
+        com.luckyowlstudios.kingdoms.kingdom.KingdomWorkstations.onRemoved(level, pos, state, newState);
+        super.onRemove(state, level, pos, newState, movedByPiston);
+    }
 }
