@@ -54,6 +54,7 @@ public class KingdomsNeoForge {
             event.accept(ModItems.SCHOLARS_DESK.get());
             event.accept(ModItems.WATCHTOWER.get());
             event.accept(ModItems.TAVERN.get());
+            event.accept(ModItems.HOUSE_MARKER.get());
         } else if (event.getTabKey() == CreativeModeTabs.SPAWN_EGGS) {
             event.accept(ModItems.GUIDE_SPAWN_EGG.get());
         }

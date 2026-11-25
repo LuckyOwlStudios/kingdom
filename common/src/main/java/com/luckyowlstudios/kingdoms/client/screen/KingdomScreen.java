@@ -410,7 +410,7 @@ public class KingdomScreen extends Screen {
             // The kingdom's numbers, under the banner.
             graphics.fill(left, top + 60, left + COLUMN_WIDTH, top + 61, 0x40FFFFFF);
             graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.villagers",
-                    growth.villagers(), growth.villagerCap()), left, top + 66, LABEL);
+                    growth.villagers(), growth.homes()), left, top + 66, LABEL);
             graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.land",
                     view.claimCount(), growth.landCap()), left, top + 77, LABEL);
             graphics.drawString(KingdomScreen.this.font, Component.translatable("kingdoms.kingdom.screen.map_scale",

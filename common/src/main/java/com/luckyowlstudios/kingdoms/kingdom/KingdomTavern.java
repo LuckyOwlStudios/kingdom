@@ -19,8 +19,8 @@ import java.util.UUID;
 /**
  * The Tavern and its Innkeeper. Villagers normally move into a kingdom only in the morning (see
  * {@link KingdomVillagers}). A kingdom with a working Innkeeper also gets one traveller moving in each night, when
- * night falls (or when the night is slept through), still only up to its villager cap and while its Town Hall is
- * loaded.
+ * night falls (or when the night is slept through), still only into a free home in a loaded house (see
+ * {@link KingdomHouses}).
  * <p>
  * An Innkeeper counts when it lives in the kingdom (a resident), is loaded, and its job site is a Tavern on the
  * kingdom's land. Unlike a Scholar it counts while asleep: the tavern stays open at night. Server side only.
@@ -61,7 +61,7 @@ public final class KingdomTavern {
     }
 
     /**
-     * Night falls on one kingdom: if it has a working Innkeeper, a Town Hall and room for another villager, one moves in.
+     * Night falls on one kingdom: if it has a working Innkeeper, a Town Hall and a free home, a villager moves in.
      *
      * @return the villager who moved in, if one did
      */

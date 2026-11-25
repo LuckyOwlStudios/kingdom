@@ -4,6 +4,7 @@
     "kingdoms:town_hall",
     "kingdoms:tavern",
     "kingdoms:scholars_desk",
-    "kingdoms:watchtower"
+    "kingdoms:watchtower",
+    "kingdoms:house_marker"
   ]
 }

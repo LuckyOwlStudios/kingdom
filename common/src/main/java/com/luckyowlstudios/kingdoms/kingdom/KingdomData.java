@@ -29,6 +29,7 @@ public final class KingdomData extends SavedData {
 
     private static final String FILE_NAME = Constants.MOD_ID;
     private static final Codec<java.util.List<Kingdom>> LIST_CODEC = Kingdom.CODEC.listOf();
+    private static final Codec<java.util.List<House>> HOUSE_LIST_CODEC = House.CODEC.listOf();
 
     private static final SavedData.Factory<KingdomData> FACTORY =
             new SavedData.Factory<>(KingdomData::new, KingdomData::load, null);
@@ -41,6 +42,8 @@ public final class KingdomData extends SavedData {
     /** No night noted yet. Night numbers can be negative (before the first nightfall), so -1 won't do. */
     static final long NO_NIGHT = Long.MIN_VALUE;
     private long lastNight = NO_NIGHT;
+    /** Every House Marker, in the order they were placed (the first marker in a house is the one that counts). */
+    private final Map<GlobalPos, House> houses = new LinkedHashMap<>();
     /** Work blocks (Scholar's Desk, Tavern, Watchtower) and the kingdom of the member who placed each. See {@link KingdomWorkstations}. */
     private final Map<GlobalPos, UUID> workstations = new HashMap<>();
     private static final Codec<Map<GlobalPos, UUID>> WORKSTATIONS_CODEC = Codec.unboundedMap(Codec.STRING,
@@ -366,8 +369,13 @@ public final class KingdomData extends SavedData {
         this.setDirty();
     }
 
-    /** A kingdom's villager died or was turned into something else: it no longer counts. */
+    /** A kingdom's villager died or was turned into something else: it no longer counts, and its bed is free. */
     Optional<Kingdom> removeResident(UUID villager) {
+        this.houses.values().forEach(house -> {
+            if (house.mutableOccupants().remove(villager)) {
+                this.setDirty();
+            }
+        });
         for (Kingdom kingdom : this.kingdoms.values()) {
             if (kingdom.mutableResidents().remove(villager)) {
                 this.setDirty();
@@ -375,6 +383,80 @@ public final class KingdomData extends SavedData {
             }
         }
         return Optional.empty();
+    }
+
+    // ---- Houses ----
+
+    /** Every House Marker in the world, in the order they were placed. */
+    public Collection<House> houses() {
+        return Collections.unmodifiableCollection(this.houses.values());
+    }
+
+    public Optional<House> house(GlobalPos pos) {
+        return Optional.ofNullable(this.houses.get(pos));
+    }
+
+    /** The house a villager lives in, if any. */
+    public Optional<House> homeOf(UUID villager) {
+        return this.houses.values().stream().filter(house -> house.occupants().contains(villager)).findFirst();
+    }
+
+    /** True if {@code first} was placed before {@code second}. */
+    boolean placedBefore(House first, House second) {
+        for (House house : this.houses.values()) {
+            if (house == first) {
+                return true;
+            }
+            if (house == second) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    /** A House Marker was placed: it counts once a scan finds it's a proper home. */
+    House addHouse(GlobalPos pos) {
+        House house = this.houses.computeIfAbsent(pos, at -> new House(at, false, java.util.List.of(), java.util.List.of()));
+        this.setDirty();
+        return house;
+    }
+
+    /** A House Marker was removed. Whoever lived there needs a new home. */
+    Optional<House> removeHouse(GlobalPos pos) {
+        House house = this.houses.remove(pos);
+        if (house != null) {
+            this.setDirty();
+        }
+        return Optional.ofNullable(house);
+    }
+
+    /** Notes what a scan found. */
+    void updateHouse(House house, boolean valid, java.util.List<net.minecraft.core.BlockPos> beds) {
+        house.setValid(valid);
+        if (!house.mutableBeds().equals(beds)) {
+            house.mutableBeds().clear();
+            house.mutableBeds().addAll(beds);
+        }
+        this.setDirty();
+    }
+
+    /** Takes out every occupant {@code keep} says no to, and any past the house's number of beds. */
+    void keepOccupants(House house, java.util.function.Predicate<UUID> keep, int beds) {
+        boolean changed = house.mutableOccupants().removeIf(keep.negate());
+        while (house.mutableOccupants().size() > beds) {
+            house.mutableOccupants().remove(house.mutableOccupants().size() - 1);
+            changed = true;
+        }
+        if (changed) {
+            this.setDirty();
+        }
+    }
+
+    /** A villager moves into a house, out of any other. */
+    void addOccupant(House house, UUID villager) {
+        this.houses.values().forEach(other -> other.mutableOccupants().remove(villager));
+        house.mutableOccupants().add(villager);
+        this.setDirty();
     }
 
     long lastDay() {
@@ -402,6 +484,9 @@ public final class KingdomData extends SavedData {
                 .ifPresent(list -> tag.put("kingdoms", list));
         tag.putLong("last_day", this.lastDay);
         tag.putLong("last_night", this.lastNight);
+        HOUSE_LIST_CODEC.encodeStart(registries.createSerializationContext(NbtOps.INSTANCE), java.util.List.copyOf(this.houses.values()))
+                .resultOrPartial(error -> Constants.LOG.error("Couldn't save houses: {}", error))
+                .ifPresent(list -> tag.put("houses", list));
         WORKSTATIONS_CODEC.encodeStart(NbtOps.INSTANCE, this.workstations)
                 .resultOrPartial(error -> Constants.LOG.error("Couldn't save workstations: {}", error))
                 .ifPresent(map -> tag.put("workstations", map));
@@ -430,6 +515,11 @@ public final class KingdomData extends SavedData {
         data.kingdoms.values().forEach(data::claimLand);
         data.lastDay = tag.contains("last_day") ? tag.getLong("last_day") : -1;
         data.lastNight = tag.contains("last_night") ? tag.getLong("last_night") : NO_NIGHT;
+        if (tag.contains("houses")) {
+            HOUSE_LIST_CODEC.parse(registries.createSerializationContext(NbtOps.INSTANCE), tag.get("houses"))
+                    .resultOrPartial(error -> Constants.LOG.error("Couldn't load houses: {}", error))
+                    .ifPresent(list -> list.forEach(house -> data.houses.put(house.pos(), house)));
+        }
         if (tag.contains("workstations")) {
             WORKSTATIONS_CODEC.parse(NbtOps.INSTANCE, tag.get("workstations"))
                     .resultOrPartial(error -> Constants.LOG.error("Couldn't load workstations: {}", error))
